@@ -166,7 +166,7 @@
 
 .scan-metrics {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   margin: 18px 0 0;
 }
@@ -188,6 +188,26 @@
   color: #132033;
   font-size: 1.1rem;
   font-weight: 800;
+}
+
+.batch-id {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #f4f7fb;
+}
+
+.batch-id span {
+  color: #6b7888;
+  font-size: 0.78rem;
+}
+
+.batch-id strong {
+  color: #26384c;
+  font-size: 0.86rem;
+  word-break: break-all;
 }
 
 .scan-table-wrap {

@@ -28,6 +28,7 @@ interface AppInfo {
 }
 
 interface ScannedFile {
+  id?: string
   path: string
   relativePath: string
   name: string
@@ -35,6 +36,10 @@ interface ScannedFile {
   sizeBytes: number
   modifiedAt: string
   isSupported: boolean
+  sha256?: string | null
+  importStatus?: 'new' | 'duplicate' | 'failed'
+  processStatus?: string
+  processError?: string | null
 }
 
 interface ScanError {
@@ -43,11 +48,15 @@ interface ScanError {
 }
 
 interface DirectoryScanResult {
+  batchId?: string
   rootPath: string
   totalFiles: number
   supportedFiles: number
   unsupportedFiles: number
   totalBytes: number
+  newFiles?: number
+  duplicateFiles?: number
+  failedFiles?: number
   files: ScannedFile[]
   errors: ScanError[]
   skippedDirectories: string[]

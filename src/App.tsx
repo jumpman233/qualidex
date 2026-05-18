@@ -108,6 +108,14 @@ function App() {
                 <dd>{scanResult.totalFiles}</dd>
               </div>
               <div>
+                <dt>新增文件</dt>
+                <dd>{scanResult.newFiles ?? 0}</dd>
+              </div>
+              <div>
+                <dt>重复文件</dt>
+                <dd>{scanResult.duplicateFiles ?? 0}</dd>
+              </div>
+              <div>
                 <dt>支持类型</dt>
                 <dd>{scanResult.supportedFiles}</dd>
               </div>
@@ -121,13 +129,20 @@ function App() {
               </div>
               <div>
                 <dt>读取错误</dt>
-                <dd>{scanResult.errors.length}</dd>
+                <dd>{scanResult.failedFiles ?? scanResult.errors.length}</dd>
               </div>
               <div>
                 <dt>跳过目录</dt>
                 <dd>{scanResult.skippedDirectories.length}</dd>
               </div>
             </dl>
+
+            {scanResult.batchId && (
+              <div className="batch-id">
+                <span>导入批次</span>
+                <strong>{scanResult.batchId}</strong>
+              </div>
+            )}
 
             <div className="scan-table-wrap">
               <table className="scan-table">
@@ -136,6 +151,7 @@ function App() {
                     <th>文件</th>
                     <th>类型</th>
                     <th>大小</th>
+                    <th>Hash</th>
                     <th>状态</th>
                   </tr>
                 </thead>
@@ -145,7 +161,8 @@ function App() {
                       <td title={file.path}>{file.relativePath}</td>
                       <td>{file.ext || '无扩展名'}</td>
                       <td>{formatBytes(file.sizeBytes)}</td>
-                      <td>{file.isSupported ? '可处理' : '暂不支持'}</td>
+                      <td title={file.sha256 ?? ''}>{formatHash(file.sha256)}</td>
+                      <td>{formatImportStatus(file)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -180,6 +197,30 @@ function formatBytes(bytes: number): string {
   const value = bytes / 1024 ** index
 
   return `${value.toFixed(index === 0 ? 0 : 1)} ${units[index]}`
+}
+
+function formatHash(hash: string | null | undefined): string {
+  if (!hash) {
+    return '未生成'
+  }
+
+  return hash.slice(0, 12)
+}
+
+function formatImportStatus(file: ScannedFile): string {
+  if (file.importStatus === 'failed') {
+    return '处理失败'
+  }
+
+  if (file.importStatus === 'duplicate') {
+    return '重复'
+  }
+
+  if (!file.isSupported) {
+    return '暂不支持'
+  }
+
+  return '新增'
 }
 
 export default App

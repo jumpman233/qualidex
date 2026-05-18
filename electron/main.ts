@@ -1,7 +1,10 @@
 import { app, BrowserWindow, dialog, ipcMain, type OpenDialogOptions } from 'electron'
+import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
-import { scanDirectory } from './services/fileScanner'
+import type Database from 'better-sqlite3'
+import { openQualidexDatabase } from './db/connection'
+import { importDirectory } from './services/importService'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -24,6 +27,19 @@ export const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist')
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 'public') : RENDERER_DIST
 
 let win: BrowserWindow | null
+let db: Database.Database | null = null
+
+function getDatabase() {
+  if (db) {
+    return db
+  }
+
+  const databaseDirectory = path.join(app.getPath('userData'), 'data')
+  mkdirSync(databaseDirectory, { recursive: true })
+  db = openQualidexDatabase(path.join(databaseDirectory, 'qualidex.sqlite'))
+
+  return db
+}
 
 function createWindow() {
   win = new BrowserWindow({
@@ -71,7 +87,7 @@ ipcMain.handle('dialog:select-source-directory', async () => {
 })
 
 ipcMain.handle('files:scan-directory', async (_event, directoryPath: string) => {
-  return scanDirectory(directoryPath)
+  return importDirectory(getDatabase(), directoryPath)
 })
 
 // Quit when all windows are closed, except on macOS. There, it's common
