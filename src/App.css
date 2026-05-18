@@ -115,6 +115,13 @@
   gap: 24px;
 }
 
+.scanner-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .scanner-heading h2 {
   margin: 0;
   color: #132033;
@@ -136,6 +143,12 @@
 .scanner-heading button:disabled {
   cursor: wait;
   opacity: 0.68;
+}
+
+.scanner-heading .secondary-action {
+  border: 1px solid #c5ceda;
+  background: #ffffff;
+  color: #26384c;
 }
 
 .selected-path {
@@ -162,6 +175,13 @@
   margin: 16px 0 0;
   color: #a23b3b;
   font-weight: 700;
+}
+
+.success-message {
+  margin: 16px 0 0;
+  color: #1f6f78;
+  font-weight: 700;
+  word-break: break-all;
 }
 
 .scan-metrics {

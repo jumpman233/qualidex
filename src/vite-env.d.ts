@@ -42,10 +42,16 @@ interface DirectoryScanResult {
   skippedDirectories: string[]
 }
 
+interface RecognitionReviewExportResult {
+  outputPath: string
+  rowCount: number
+}
+
 interface Window {
   qualidex: {
     getAppInfo(): Promise<AppInfo>
     selectSourceDirectory(): Promise<string | null>
     scanDirectory(directoryPath: string): Promise<DirectoryScanResult>
+    exportRecognitionReviewExcel(): Promise<RecognitionReviewExportResult | null>
   }
 }

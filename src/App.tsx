@@ -7,6 +7,8 @@ function App() {
   const [scanResult, setScanResult] = useState<DirectoryScanResult | null>(null)
   const [scanStatus, setScanStatus] = useState<'idle' | 'scanning' | 'done' | 'error'>('idle')
   const [scanError, setScanError] = useState<string | null>(null)
+  const [exportStatus, setExportStatus] = useState<'idle' | 'exporting' | 'done' | 'error'>('idle')
+  const [exportMessage, setExportMessage] = useState<string | null>(null)
 
   useEffect(() => {
     window.qualidex.getAppInfo().then(setAppInfo).catch(() => {
@@ -37,6 +39,26 @@ function App() {
     } catch (error) {
       setScanError(error instanceof Error ? error.message : String(error))
       setScanStatus('error')
+    }
+  }
+
+  async function handleExportRecognitionReview() {
+    setExportStatus('exporting')
+    setExportMessage(null)
+
+    try {
+      const result = await window.qualidex.exportRecognitionReviewExcel()
+
+      if (!result) {
+        setExportStatus('idle')
+        return
+      }
+
+      setExportStatus('done')
+      setExportMessage(`已导出 ${result.rowCount} 行：${result.outputPath}`)
+    } catch (error) {
+      setExportStatus('error')
+      setExportMessage(error instanceof Error ? error.message : String(error))
     }
   }
 
@@ -88,9 +110,19 @@ function App() {
             <p className="eyebrow">Local Source</p>
             <h2>资料目录扫描</h2>
           </div>
-          <button type="button" onClick={handleSelectDirectory} disabled={scanStatus === 'scanning'}>
-            {scanStatus === 'scanning' ? '扫描中' : '选择资料目录'}
-          </button>
+          <div className="scanner-actions">
+            <button type="button" onClick={handleSelectDirectory} disabled={scanStatus === 'scanning'}>
+              {scanStatus === 'scanning' ? '扫描中' : '选择资料目录'}
+            </button>
+            <button
+              type="button"
+              className="secondary-action"
+              onClick={handleExportRecognitionReview}
+              disabled={exportStatus === 'exporting'}
+            >
+              {exportStatus === 'exporting' ? '导出中' : '导出验收表'}
+            </button>
+          </div>
         </div>
 
         <div className="selected-path">
@@ -99,6 +131,11 @@ function App() {
         </div>
 
         {scanError && <p className="error-message">{scanError}</p>}
+        {exportMessage && (
+          <p className={exportStatus === 'error' ? 'error-message' : 'success-message'}>
+            {exportMessage}
+          </p>
+        )}
 
         {scanResult && (
           <>

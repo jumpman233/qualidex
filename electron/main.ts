@@ -5,6 +5,7 @@ import path from 'node:path'
 import type Database from 'better-sqlite3'
 import { openQualidexDatabase } from './db/connection'
 import { importDirectory } from './services/importService'
+import { exportRecognitionReviewExcel } from './services/exportService'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -89,6 +90,36 @@ ipcMain.handle('dialog:select-source-directory', async () => {
 ipcMain.handle('files:scan-directory', async (_event, directoryPath: string) => {
   return importDirectory(getDatabase(), directoryPath)
 })
+
+ipcMain.handle('export:recognition-review-excel', async () => {
+  const result = win
+    ? await dialog.showSaveDialog(win, {
+        title: '导出识别验收表',
+        defaultPath: `识别验收-${formatDateForFileName(new Date())}.xlsx`,
+        filters: [{ name: 'Excel 工作簿', extensions: ['xlsx'] }],
+      })
+    : await dialog.showSaveDialog({
+        title: '导出识别验收表',
+        defaultPath: `识别验收-${formatDateForFileName(new Date())}.xlsx`,
+        filters: [{ name: 'Excel 工作簿', extensions: ['xlsx'] }],
+      })
+
+  if (result.canceled || !result.filePath) {
+    return null
+  }
+
+  return exportRecognitionReviewExcel(getDatabase(), result.filePath)
+})
+
+function formatDateForFileName(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hour = String(date.getHours()).padStart(2, '0')
+  const minute = String(date.getMinutes()).padStart(2, '0')
+
+  return `${year}${month}${day}-${hour}${minute}`
+}
 
 // Quit when all windows are closed, except on macOS. There, it's common
 // for applications and their menu bar to stay active until the user quits

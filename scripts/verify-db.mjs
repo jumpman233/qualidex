@@ -20,6 +20,7 @@ const modules = [
   ['electron/services/textExtractService.ts', 'electron/services/textExtractService.js'],
   ['electron/services/aiConfig.ts', 'electron/services/aiConfig.js'],
   ['electron/services/aiExtractService.ts', 'electron/services/aiExtractService.js'],
+  ['electron/services/exportService.ts', 'electron/services/exportService.js'],
   ['electron/services/importService.ts', 'electron/services/importService.js'],
 ]
 
@@ -96,6 +97,14 @@ function getElectronVerifierSource() {
 const { app } = require('electron');
 const { openQualidexDatabase } = require(${JSON.stringify(path.join(tempModuleRoot, 'electron/db/connection.js'))});
 const { importDirectory } = require(${JSON.stringify(path.join(tempModuleRoot, 'electron/services/importService.js'))});
+
+process.env.APP_ROOT = ${JSON.stringify(tempRoot)};
+delete process.env.AI_PROVIDER;
+delete process.env.AI_BASE_URL;
+delete process.env.AI_MODEL_NAME;
+delete process.env.AI_API_KEY;
+delete process.env.AI_SAMPLE_ACCEPTANCE_RATE;
+delete process.env.AI_USE_JSON_RESPONSE_FORMAT;
 
 app.whenReady().then(async () => {
   try {

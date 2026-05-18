@@ -10,4 +10,7 @@ contextBridge.exposeInMainWorld('qualidex', {
   scanDirectory(directoryPath: string) {
     return ipcRenderer.invoke('files:scan-directory', directoryPath)
   },
+  exportRecognitionReviewExcel() {
+    return ipcRenderer.invoke('export:recognition-review-excel')
+  },
 })

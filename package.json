@@ -14,6 +14,7 @@
     "verify:hash": "node scripts/verify-hash.mjs",
     "verify:text-extract": "node scripts/verify-text-extract.mjs",
     "verify:ai-extract": "node scripts/verify-ai-extract.mjs",
+    "verify:excel-export": "node scripts/verify-excel-export.mjs",
     "verify:db": "pnpm run rebuild:native && node scripts/verify-db.mjs"
   },
   "dependencies": {
@@ -21,7 +22,8 @@
     "pdfjs-dist": "^5.7.284",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "sqlite-vec": "^0.1.9"
+    "sqlite-vec": "^0.1.9",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.4",
