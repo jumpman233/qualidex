@@ -4,6 +4,7 @@ import path from 'node:path'
 import { calculateFileSha256 } from './hashService'
 import { type ScannedFile, scanDirectory, type ScanError } from './fileScanner'
 import { extractTextFromFile } from './textExtractService'
+import { extractAndPersistAiSuggestions } from './aiExtractService'
 
 export interface ImportedFile extends ScannedFile {
   id: string
@@ -13,6 +14,7 @@ export interface ImportedFile extends ScannedFile {
   processError: string | null
   ocrStatus: string
   ocrTextPreview: string
+  aiStatus: string
 }
 
 export interface ImportDirectoryResult {
@@ -151,6 +153,18 @@ export async function importDirectory(
             error: null,
           }
         : await extractTextFromFile(file.path, file.ext)
+      const aiResult = !existingHash && extraction.text.trim()
+        ? await extractAndPersistAiSuggestions(db, {
+            fileId,
+            fileName: file.name,
+            originalPath: file.path,
+            parentFolder: path.dirname(file.relativePath),
+            ocrText: extraction.text,
+          })
+        : {
+            status: existingHash ? 'duplicate' : 'ai_skipped',
+            error: extraction.text.trim() ? null : '没有 OCR 文本，跳过 AI 抽取。',
+          }
 
       if (existingHash) {
         duplicateFiles += 1
@@ -170,8 +184,8 @@ export async function importDirectory(
         parentFolder: path.dirname(file.relativePath),
         ocrText: extraction.text,
         ocrStatus: extraction.status,
-        processStatus: extraction.processStatus,
-        processError: extraction.error,
+        processStatus: resolveProcessStatus(extraction.processStatus, aiResult.status),
+        processError: joinProcessErrors(extraction.error, aiResult.error),
         archiveStatus: 'pending',
         createdAt: now,
         updatedAt: now,
@@ -183,10 +197,11 @@ export async function importDirectory(
           id: fileId,
           sha256,
           importStatus,
-          processStatus: extraction.processStatus,
-          processError: extraction.error,
+          processStatus: resolveProcessStatus(extraction.processStatus, aiResult.status),
+          processError: joinProcessErrors(extraction.error, aiResult.error),
           ocrStatus: extraction.status,
           ocrTextPreview: createTextPreview(extraction.text),
+          aiStatus: aiResult.status,
         })
       }
     } catch (error) {
@@ -227,6 +242,7 @@ export async function importDirectory(
           processError: message,
           ocrStatus: 'failed',
           ocrTextPreview: '',
+          aiStatus: 'ai_skipped',
         })
       }
     }
@@ -287,4 +303,17 @@ function createTextPreview(text: string): string {
   }
 
   return `${normalizedText.slice(0, TEXT_PREVIEW_LIMIT)}...`
+}
+
+function resolveProcessStatus(textStatus: string, aiStatus: string): string {
+  if (aiStatus === 'ai_extracted' || aiStatus === 'needs_review' || aiStatus === 'ai_extract_failed') {
+    return aiStatus
+  }
+
+  return textStatus
+}
+
+function joinProcessErrors(...errors: Array<string | null | undefined>): string | null {
+  const messages = errors.filter((error): error is string => Boolean(error))
+  return messages.length > 0 ? messages.join('\n') : null
 }

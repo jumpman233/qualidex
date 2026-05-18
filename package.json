@@ -13,6 +13,7 @@
     "verify:scan": "node scripts/verify-scan.mjs",
     "verify:hash": "node scripts/verify-hash.mjs",
     "verify:text-extract": "node scripts/verify-text-extract.mjs",
+    "verify:ai-extract": "node scripts/verify-ai-extract.mjs",
     "verify:db": "pnpm run rebuild:native && node scripts/verify-db.mjs"
   },
   "dependencies": {

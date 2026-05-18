@@ -154,6 +154,7 @@ function App() {
                     <th>Hash</th>
                     <th>状态</th>
                     <th>文本提取</th>
+                    <th>AI 抽取</th>
                     <th>文本预览</th>
                   </tr>
                 </thead>
@@ -166,6 +167,7 @@ function App() {
                       <td title={file.sha256 ?? ''}>{formatHash(file.sha256)}</td>
                       <td>{formatImportStatus(file)}</td>
                       <td title={file.processError ?? ''}>{formatOcrStatus(file)}</td>
+                      <td title={file.processError ?? ''}>{formatAiStatus(file)}</td>
                       <td title={file.ocrTextPreview ?? ''}>{file.ocrTextPreview || '-'}</td>
                     </tr>
                   ))}
@@ -241,6 +243,23 @@ function formatOcrStatus(file: ScannedFile): string {
       return '暂不支持'
     case 'failed':
       return '提取失败'
+    default:
+      return '未处理'
+  }
+}
+
+function formatAiStatus(file: ScannedFile): string {
+  switch (file.aiStatus) {
+    case 'ai_extracted':
+      return '已抽取'
+    case 'needs_review':
+      return '待确认'
+    case 'ai_extract_failed':
+      return '抽取失败'
+    case 'duplicate':
+      return '重复跳过'
+    case 'ai_skipped':
+      return '已跳过'
     default:
       return '未处理'
   }

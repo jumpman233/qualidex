@@ -21,6 +21,7 @@ interface ScannedFile {
   processError?: string | null
   ocrStatus?: string
   ocrTextPreview?: string
+  aiStatus?: string
 }
 
 interface DirectoryScanResult {

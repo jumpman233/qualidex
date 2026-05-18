@@ -18,6 +18,8 @@ const modules = [
   ['electron/services/fileScanner.ts', 'electron/services/fileScanner.js'],
   ['electron/services/ocrService.ts', 'electron/services/ocrService.js'],
   ['electron/services/textExtractService.ts', 'electron/services/textExtractService.js'],
+  ['electron/services/aiConfig.ts', 'electron/services/aiConfig.js'],
+  ['electron/services/aiExtractService.ts', 'electron/services/aiExtractService.js'],
   ['electron/services/importService.ts', 'electron/services/importService.js'],
 ]
 
@@ -120,10 +122,14 @@ app.whenReady().then(async () => {
       const duplicateCount = db
         .prepare("select count(*) as count from files where process_status = 'duplicate'")
         .get().count;
+      const aiResultCount = db.prepare('select count(*) as count from ai_extract_results').get().count;
+      const reviewItemCount = db.prepare('select count(*) as count from review_items').get().count;
 
       assertEqual(batchCount, 2, 'import batch rows');
       assertEqual(fileCount, 6, 'file rows');
       assertEqual(duplicateCount, 4, 'duplicate file rows');
+      assertEqual(aiResultCount, 0, 'AI result rows without config');
+      assertEqual(reviewItemCount, 0, 'review item rows without config');
 
       console.log('verify:db passed');
     } finally {
