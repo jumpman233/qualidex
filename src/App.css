@@ -245,8 +245,14 @@
 }
 
 .scan-table td:first-child {
-  max-width: 520px;
+  max-width: 360px;
   word-break: break-all;
+}
+
+.scan-table td:last-child {
+  max-width: 320px;
+  color: #516172;
+  word-break: break-word;
 }
 
 .scan-errors {

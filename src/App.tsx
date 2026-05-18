@@ -128,7 +128,7 @@ function App() {
                 <dd>{formatBytes(scanResult.totalBytes)}</dd>
               </div>
               <div>
-                <dt>读取错误</dt>
+                <dt>导入失败</dt>
                 <dd>{scanResult.failedFiles ?? scanResult.errors.length}</dd>
               </div>
               <div>
@@ -153,6 +153,8 @@ function App() {
                     <th>大小</th>
                     <th>Hash</th>
                     <th>状态</th>
+                    <th>文本提取</th>
+                    <th>文本预览</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -163,6 +165,8 @@ function App() {
                       <td>{formatBytes(file.sizeBytes)}</td>
                       <td title={file.sha256 ?? ''}>{formatHash(file.sha256)}</td>
                       <td>{formatImportStatus(file)}</td>
+                      <td title={file.processError ?? ''}>{formatOcrStatus(file)}</td>
+                      <td title={file.ocrTextPreview ?? ''}>{file.ocrTextPreview || '-'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -221,6 +225,25 @@ function formatImportStatus(file: ScannedFile): string {
   }
 
   return '新增'
+}
+
+function formatOcrStatus(file: ScannedFile): string {
+  switch (file.ocrStatus) {
+    case 'text_extracted':
+      return '已提取文本'
+    case 'ocr_completed':
+      return 'OCR 已完成'
+    case 'pending_ocr':
+      return '待 OCR'
+    case 'duplicate':
+      return '重复跳过'
+    case 'unsupported':
+      return '暂不支持'
+    case 'failed':
+      return '提取失败'
+    default:
+      return '未处理'
+  }
 }
 
 export default App

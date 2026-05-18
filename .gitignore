@@ -13,6 +13,7 @@ dist-electron
 dist-ssr
 *.local
 .tmp
+test-fixtures/ocr-source/private/
 
 # Editor directories and files
 .vscode/*

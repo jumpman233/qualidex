@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 import { calculateFileSha256 } from './hashService'
 import { type ScannedFile, scanDirectory, type ScanError } from './fileScanner'
+import { extractTextFromFile } from './textExtractService'
 
 export interface ImportedFile extends ScannedFile {
   id: string
@@ -10,6 +11,8 @@ export interface ImportedFile extends ScannedFile {
   importStatus: 'new' | 'duplicate' | 'failed'
   processStatus: string
   processError: string | null
+  ocrStatus: string
+  ocrTextPreview: string
 }
 
 export interface ImportDirectoryResult {
@@ -32,6 +35,7 @@ interface ExistingHashRow {
 }
 
 const PREVIEW_LIMIT = 200
+const TEXT_PREVIEW_LIMIT = 500
 
 export async function importDirectory(
   db: Database.Database,
@@ -89,6 +93,7 @@ export async function importDirectory(
       source_batch_id,
       source_root_path,
       parent_folder,
+      ocr_text,
       ocr_status,
       process_status,
       process_error,
@@ -106,6 +111,7 @@ export async function importDirectory(
       @sourceBatchId,
       @sourceRootPath,
       @parentFolder,
+      @ocrText,
       @ocrStatus,
       @processStatus,
       @processError,
@@ -137,7 +143,14 @@ export async function importDirectory(
       const sha256 = await calculateFileSha256(file.path)
       const existingHash = findExistingHash.get(sha256) as ExistingHashRow | undefined
       const importStatus = existingHash ? 'duplicate' : 'new'
-      const processStatus = existingHash ? 'duplicate' : 'pending'
+      const extraction = existingHash
+        ? {
+            text: '',
+            status: 'duplicate',
+            processStatus: 'duplicate',
+            error: null,
+          }
+        : await extractTextFromFile(file.path, file.ext)
 
       if (existingHash) {
         duplicateFiles += 1
@@ -155,9 +168,10 @@ export async function importDirectory(
         sourceBatchId: batchId,
         sourceRootPath: scanResult.rootPath,
         parentFolder: path.dirname(file.relativePath),
-        ocrStatus: 'pending',
-        processStatus,
-        processError: null,
+        ocrText: extraction.text,
+        ocrStatus: extraction.status,
+        processStatus: extraction.processStatus,
+        processError: extraction.error,
         archiveStatus: 'pending',
         createdAt: now,
         updatedAt: now,
@@ -169,8 +183,10 @@ export async function importDirectory(
           id: fileId,
           sha256,
           importStatus,
-          processStatus,
-          processError: null,
+          processStatus: extraction.processStatus,
+          processError: extraction.error,
+          ocrStatus: extraction.status,
+          ocrTextPreview: createTextPreview(extraction.text),
         })
       }
     } catch (error) {
@@ -192,7 +208,8 @@ export async function importDirectory(
         sourceBatchId: batchId,
         sourceRootPath: scanResult.rootPath,
         parentFolder: path.dirname(file.relativePath),
-        ocrStatus: 'pending',
+        ocrText: null,
+        ocrStatus: 'failed',
         processStatus: 'failed',
         processError: message,
         archiveStatus: 'pending',
@@ -208,6 +225,8 @@ export async function importDirectory(
           importStatus: 'failed',
           processStatus: 'failed',
           processError: message,
+          ocrStatus: 'failed',
+          ocrTextPreview: '',
         })
       }
     }
@@ -258,4 +277,14 @@ function getErrorMessage(error: unknown): string {
   }
 
   return String(error)
+}
+
+function createTextPreview(text: string): string {
+  const normalizedText = text.replace(/\s+/g, ' ').trim()
+
+  if (normalizedText.length <= TEXT_PREVIEW_LIMIT) {
+    return normalizedText
+  }
+
+  return `${normalizedText.slice(0, TEXT_PREVIEW_LIMIT)}...`
 }
