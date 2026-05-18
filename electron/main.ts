@@ -1,6 +1,7 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, type OpenDialogOptions } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import { scanDirectory } from './services/fileScanner'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -52,6 +53,26 @@ ipcMain.handle('app:get-info', () => ({
   version: app.getVersion(),
   platform: process.platform,
 }))
+
+ipcMain.handle('dialog:select-source-directory', async () => {
+  const options: OpenDialogOptions = {
+    title: '选择资料目录',
+    properties: ['openDirectory'],
+  }
+  const result = win
+    ? await dialog.showOpenDialog(win, options)
+    : await dialog.showOpenDialog(options)
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return null
+  }
+
+  return result.filePaths[0]
+})
+
+ipcMain.handle('files:scan-directory', async (_event, directoryPath: string) => {
+  return scanDirectory(directoryPath)
+})
 
 // Quit when all windows are closed, except on macOS. There, it's common
 // for applications and their menu bar to stay active until the user quits

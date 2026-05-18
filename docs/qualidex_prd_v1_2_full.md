@@ -1,10 +1,10 @@
-# 人员资料归档与资质查询工具 PRD
+# Qualidex 人员资料归档与资质查询工具 PRD
 
-> 版本：V1.1  
+> 版本：V1.2  
 > 产品形态：Windows 本地桌面工具  
 > 技术栈：Electron + electron-vite + React + TypeScript + SQLite + sqlite-vec + 本地 OCR + 云端文本 AI API  
 > 核心目标：对散乱人员资料进行本地扫描、结构化识别、分类归档、人工确认、条件查询和资料导出。  
-> 重要原则：原始文件不移动、不删除；数据库是事实源；归档目录是根据数据库生成的复制结果。
+> 重要原则：原始文件不移动、不删除；数据库是事实源；归档目录是根据数据库生成的复制结果；查询类别支持多选，归档类别保持单主类别。
 
 ---
 
@@ -28,6 +28,8 @@
 - 一个人的资料散落在多个目录
 - 多个人员资料出现在同一个 PDF 或图片集合中
 - 地区信息不稳定
+- 类别信息可能涉及工程、环境、消防员等多个业务口径
+- 查询时可能需要同时筛选多个类别，例如工程 + 消防员
 - 证书名称不标准
 - 同名人员难以区分
 - 大量图片需要 OCR
@@ -46,14 +48,15 @@
 1. 选择本地资料目录并扫描文件。
 2. 对图片 / PDF 等资料进行 OCR 或文本抽取。
 3. 使用 AI 对 OCR 后文本进行结构化抽取。
-4. 识别人员、地区、类别、学历、证书等信息。
+4. 识别人员、地区、主类别、学历、证书等信息。
 5. 将资料按统一规则复制到新的归档目录。
 6. 对低置信度结果进入待确认流程。
 7. 支持按地区、类别、学历、证书等条件查询人员。
-8. 支持导出 Excel、复制人员资料文件夹、生成后续可压缩的导出目录。
-9. 支持新增部分文件夹。
-10. 支持人员、文件、证书、归档信息的修改和软删除。
-11. 支持重新生成归档结果。
+8. 查询时类别支持多选，例如工程 + 消防员。
+9. 支持导出 Excel、复制人员资料文件夹、生成后续可压缩的导出目录。
+10. 支持新增部分文件夹。
+11. 支持人员、文件、证书、归档信息的修改和软删除。
+12. 支持重新生成归档结果。
 
 ### 2.2 不做什么
 
@@ -68,6 +71,8 @@ MVP 阶段暂不做：
 7. 不强制自动拆分多人员 PDF。
 8. 不使用 Rust CLI 作为第一版必要依赖。
 9. 不做大规模 RAG 问答。
+10. 不强制实现“一人多类别”的完整多对多模型。
+11. 不做多类别重复归档，即一个人员自动复制到多个类别目录。
 
 ---
 
@@ -111,7 +116,7 @@ TypeScript
 项目初始化建议：
 
 ```bash
-npm create electron-vite@latest personnel-archive
+npm create electron-vite@latest qualidex
 ```
 
 选择：
@@ -201,7 +206,7 @@ AI 用于：
 - 同名冲突
 - 身份证后四位缺失
 - 地区不确定
-- 类别不确定
+- 主类别不确定
 - 文件类型不确定
 - 学历不确定
 - 证书名称不确定
@@ -219,6 +224,23 @@ AI 可以抽取、建议、分组、解释，但最终查询、导出和证书�
 SQL 精确查询
 ```
 
+### 5.5 类别的查询与归档分离
+
+系统中“类别”同时存在两个使用场景：
+
+1. 归档类别：用于生成文件夹结构。
+2. 查询类别：用于筛选人员结果。
+
+MVP 阶段建议：
+
+- 归档类别保持单主类别。
+- 查询类别支持多选。
+- 查询多选类别默认采用 OR 逻辑。
+- 如果一个人员确实存在多个业务类别，第一版可通过人工确认主类别，其他类别作为候选类别或扩展字段记录。
+- 后续如业务强依赖“一人多类别”，再升级为人员与类别多对多关系。
+
+这样可以避免归档目录出现重复复制、同步困难和删除风险。
+
 ---
 
 ## 6. 归档目录规则
@@ -229,7 +251,7 @@ SQL 精确查询
 
 ```text
 归档输出/
-  类别/
+  主类别/
     地区/
       人员姓名_唯一标识/
         01_身份证/
@@ -262,9 +284,19 @@ SQL 精确查询
       钱七_5566/
 ```
 
-### 6.2 类别规则
+注意：
 
-第一层类别包括：
+MVP 阶段，一个人员只归入一个主类别目录。
+
+如果查询时选择多个类别，例如“工程 + 消防员”，只是查询条件多选，不代表同一个人员一定会同时出现在多个类别目录下。
+
+后续如果确实需要一个人员在多个类别目录下都出现，应通过“复制式多类别归档”作为增强功能单独设计，并在导出和删除逻辑中做风险提示。
+
+### 6.2 主类别规则
+
+主类别用于归档目录第一层。
+
+MVP 阶段主类别包括：
 
 ```text
 工程
@@ -273,7 +305,9 @@ SQL 精确查询
 未识别类别
 ```
 
-类别来源包括：
+归档时，一个人员默认只归入一个主类别目录。
+
+主类别来源包括：
 
 1. 用户导入时手动指定。
 2. 原始文件夹路径。
@@ -285,12 +319,88 @@ SQL 精确查询
 数据库需要记录：
 
 ```text
-category
-category_source
-category_confidence
+primary_category
+primary_category_source
+primary_category_confidence
 ```
 
-### 6.3 地区规则
+如果后续业务上确认一个人员可以同时属于多个类别，应扩展为：
+
+```text
+people
+person_categories
+```
+
+其中：
+
+```text
+people.primary_category
+```
+
+用于归档主目录；
+
+```text
+person_categories
+```
+
+用于查询筛选和业务标签。
+
+MVP 阶段可以暂不实现 `person_categories`，但字段命名建议从一开始就避免只写死为 `category`。
+
+### 6.3 查询类别规则
+
+查询类别支持多选。
+
+例如用户输入：
+
+```text
+找工程和消防员里成都有二建证的人
+```
+
+系统应解析为：
+
+```json
+{
+  "categories": ["工程", "消防员"]
+}
+```
+
+默认语义为：
+
+```text
+类别属于 工程 或 消防员
+```
+
+不是：
+
+```text
+同时属于工程和消防员
+```
+
+MVP 查询 SQL 可使用：
+
+```sql
+WHERE primary_category IN ('工程', '消防员')
+```
+
+如果后续支持人员多类别，则查询逻辑改为：
+
+```sql
+WHERE EXISTS (
+  SELECT 1
+  FROM person_categories pc
+  WHERE pc.person_id = people.id
+  AND pc.category IN ('工程', '消防员')
+)
+```
+
+如果用户明确表达“同时属于工程和消防员”，MVP 阶段应提示：
+
+```text
+当前版本按任一类别匹配。如需同时属于多个类别，需要后续启用多类别人员模型。
+```
+
+### 6.4 地区规则
 
 第二层地区包括：
 
@@ -319,7 +429,7 @@ region_source
 region_confidence
 ```
 
-### 6.4 人员文件夹规则
+### 6.5 人员文件夹规则
 
 人员文件夹命名：
 
@@ -347,7 +457,7 @@ region_confidence
 
 并进入待确认。
 
-### 6.5 资料类型规则
+### 6.6 资料类型规则
 
 人员目录下资料类型包括：
 
@@ -365,7 +475,7 @@ region_confidence
 99_待确认
 ```
 
-### 6.6 多人员资料规则
+### 6.7 多人员资料规则
 
 如果一个 PDF 或图片文件中包含多个人员资料，不直接归入某一个人员目录。
 
@@ -373,7 +483,7 @@ region_confidence
 
 ```text
 归档输出/
-  类别/
+  主类别/
     地区/
       _多人员资料/
         多人员资料_文件名或编号/
@@ -396,7 +506,7 @@ MVP 阶段不强制自动拆分多人员 PDF，只做识别、关联、待确认
   ↓
 用户选择归档输出目录
   ↓
-可选：用户指定默认类别 / 默认地区
+可选：用户指定默认主类别 / 默认地区
   ↓
 系统创建 import_batch
   ↓
@@ -432,7 +542,7 @@ AI 结构化抽取
   ↓
 选择导入方式：新增文件夹
   ↓
-可选：指定类别 / 地区
+可选：指定主类别 / 地区
   ↓
 创建 import_batch
   ↓
@@ -556,7 +666,7 @@ OCR 文本
 文件名
 原始路径
 上级文件夹名
-用户指定类别
+用户指定主类别
 用户指定地区
 ```
 
@@ -568,9 +678,11 @@ AI 输出 JSON：
 {
   "document_type": "id_card | diploma | degree | license | unknown | other",
   "category": {
-    "value": "工程",
+    "primary_value": "工程",
+    "candidate_values": ["工程", "消防员"],
     "source": "user_input | folder_path | file_name | ocr_text | unknown",
-    "confidence": 0.9
+    "confidence": 0.9,
+    "needs_manual_review": false
   },
   "person": {
     "name": "张三",
@@ -610,6 +722,13 @@ AI 输出 JSON：
 }
 ```
 
+说明：
+
+- AI 可以返回多个候选类别。
+- 归档阶段必须确认一个 `primary_value`。
+- 如果多个类别置信度接近，进入待确认。
+- MVP 阶段不要求一个人员同时拥有多个正式类别。
+
 ---
 
 ## 10. 人员归并功能
@@ -620,9 +739,9 @@ AI 输出 JSON：
 
 ```text
 1. 姓名 + 身份证后四位一致：高置信度同一人
-2. 姓名 + 地区 + 类别一致：疑似同一人
+2. 姓名 + 地区 + 主类别一致：疑似同一人
 3. 姓名一致但地区不同：进入待确认
-4. 姓名一致但类别不同：进入待确认
+4. 姓名一致但主类别不同：进入待确认
 5. 无姓名或无唯一标识：进入待确认
 ```
 
@@ -662,7 +781,8 @@ AI 输出 JSON：
 ```text
 person_unknown
 person_merge_conflict
-category_unknown
+primary_category_unknown
+primary_category_conflict
 region_unknown
 document_type_unknown
 license_uncertain
@@ -681,7 +801,7 @@ ai_extract_failed
 2. 打开原始文件所在目录。
 3. 查看 OCR 文本。
 4. 查看 AI 抽取结果。
-5. 修改类别。
+5. 修改主类别。
 6. 修改地区。
 7. 修改人员。
 8. 修改资料类型。
@@ -696,7 +816,7 @@ ai_extract_failed
 MVP 可支持简单批量操作：
 
 ```text
-批量设置类别
+批量设置主类别
 批量设置地区
 批量标记为其他资料
 批量忽略
@@ -778,7 +898,7 @@ AI 只做建议，用户最终确认。
 示例：
 
 ```text
-找成都 3 个大专以上、有二建证、资料齐全的人
+找工程和消防员里成都 3 个大专以上、有二建证、资料齐全的人
 ```
 
 AI 解析结果：
@@ -786,7 +906,8 @@ AI 解析结果：
 ```json
 {
   "intent": "find_people",
-  "category": "工程",
+  "categories": ["工程", "消防员"],
+  "category_match_mode": "any",
   "region": "成都",
   "count": 3,
   "education_min": "大专",
@@ -802,12 +923,20 @@ AI 解析结果：
 }
 ```
 
+说明：
+
+- `categories` 是数组。
+- `category_match_mode` 默认是 `any`。
+- `any` 表示属于任一类别即可。
+- MVP 阶段主要支持 `any`。
+- 如果 AI 解析为 `all`，页面提示当前版本默认按任一类别匹配。
+
 ### 13.2 条件确认
 
 页面展示系统理解：
 
 ```text
-类别：工程
+类别：[工程] [消防员]
 地区：成都
 人数：3
 学历：大专以上
@@ -816,14 +945,38 @@ AI 解析结果：
 是否包含待确认：否
 ```
 
-用户确认后再查询。
+类别展示建议使用标签形式：
+
+```text
+类别：[工程] [消防员]
+```
+
+用户点击“修改条件”时，类别控件应为多选控件，而不是单选下拉。
+
+类别多选默认语义为：
+
+```text
+工程 或 消防员
+```
+
+不是：
+
+```text
+同时属于工程和消防员
+```
+
+如果用户明确表达“同时属于工程和消防员”，MVP 阶段应提示：
+
+```text
+当前版本按任一类别匹配。如需同时属于多个类别，需要后续启用多类别人员模型。
+```
 
 ### 13.3 高级筛选
 
 支持字段：
 
 ```text
-类别
+类别，支持多选
 地区
 学历
 证书
@@ -841,7 +994,7 @@ AI 解析结果：
 ```text
 选择
 姓名
-类别
+主类别
 地区
 学历
 证书
@@ -863,6 +1016,22 @@ AI 解析结果：
 加入导出
 ```
 
+### 13.5 查询 SQL 规则
+
+MVP 阶段类别查询使用主类别字段。
+
+示例：
+
+```sql
+SELECT *
+FROM people
+WHERE status = 'active'
+AND primary_category IN ('工程', '消防员')
+AND region = '成都';
+```
+
+如果用户未选择类别，则不添加类别限制。
+
 ---
 
 ## 14. 导出功能
@@ -873,7 +1042,7 @@ Excel 字段：
 
 ```text
 姓名
-类别
+主类别
 地区
 身份证后四位
 学历
@@ -914,6 +1083,17 @@ Excel 字段：
 仅导出清单中标记路径
 ```
 
+### 14.4 多类别查询导出提示
+
+如果本次查询选择了多个类别，需要在导出说明中展示：
+
+```text
+本次导出类别范围：工程、消防员
+类别匹配方式：任一类别匹配
+```
+
+避免业务方误以为结果人员同时属于多个类别。
+
 ---
 
 ## 15. 修改功能
@@ -926,7 +1106,7 @@ Excel 字段：
 人员信息
 - 姓名
 - 身份证后四位
-- 类别
+- 主类别
 - 地区
 - 学历
 - 人员合并 / 拆分
@@ -1054,7 +1234,7 @@ MVP 不支持物理删除原始资料。
 
 ```text
 全部归档
-指定类别归档
+指定主类别归档
 指定地区归档
 指定人员归档
 指定导入批次归档
@@ -1083,7 +1263,41 @@ MVP 不支持物理删除原始资料。
 
 ## 18. 页面设计
 
-### 18.1 数据源与导入页
+### 18.1 页面整体方向
+
+前端采用单页工作台设计：
+
+```text
+Notion / 飞书式结构化工作台
++
+ChatGPT / Cursor 式自然语言输入框
++
+卡片式确认
++
+查询导出优先
+```
+
+面向非技术用户，页面上避免直接暴露：
+
+```text
+import_batch
+OCR pipeline
+AI extraction
+archive job
+SQLite
+```
+
+应使用：
+
+```text
+导入资料
+整理资料
+待确认
+查询人员
+导出结果
+```
+
+### 18.2 数据源与导入页
 
 功能：
 
@@ -1094,11 +1308,11 @@ MVP 不支持物理删除原始资料。
   - 首次全量导入
   - 新增文件夹
   - 重新扫描指定文件夹
-- 手动指定类别
+- 手动指定主类别
 - 手动指定地区
 - 开始导入
 
-### 18.2 扫描处理页
+### 18.3 扫描处理页
 
 展示：
 
@@ -1121,7 +1335,7 @@ MVP 不支持物理删除原始资料。
 - 停止
 - 重新处理失败项
 
-### 18.3 待确认页
+### 18.4 待确认页
 
 功能：
 
@@ -1134,12 +1348,14 @@ MVP 不支持物理删除原始资料。
 - 确认
 - 批量处理
 
-### 18.4 人员详情页
+MVP 第一版可采用卡片式确认。
+
+### 18.5 人员详情页
 
 展示：
 
 - 基本信息
-- 类别 / 地区
+- 主类别 / 地区
 - 学历
 - 证书
 - 关联文件
@@ -1156,18 +1372,48 @@ MVP 不支持物理删除原始资料。
 - 重新生成该人员归档
 - 删除人员
 
-### 18.5 查询页
+### 18.6 查询页
 
 功能：
 
 - 自然语言查询框
 - AI 解析结果确认
+- 类别多选条件展示
 - 证书候选确认
 - 高级筛选
 - 候选人员列表
 - 导出操作
 
-### 18.6 导出页
+### 18.7 类别筛选控件
+
+查询页中的类别筛选应支持多选。
+
+可选项：
+
+```text
+工程
+环境
+消防员
+未识别类别
+```
+
+展示方式：
+
+```text
+类别：[工程] [消防员]
+```
+
+修改条件时，使用多选下拉或标签选择器。
+
+交互要求：
+
+- 可同时选择多个类别。
+- 默认查询逻辑为 OR。
+- 用户可一键清空类别条件。
+- 未选择类别时，表示不限制类别。
+- 类别条件只影响查询筛选，不直接改变归档目录。
+
+### 18.8 导出页
 
 功能：
 
@@ -1177,7 +1423,7 @@ MVP 不支持物理删除原始资料。
 - 查看人员清单
 - 查看导出日志
 
-### 18.7 回收站页
+### 18.9 回收站页
 
 功能：
 
@@ -1198,15 +1444,19 @@ CREATE TABLE people (
   name TEXT,
   id_card_last4 TEXT,
   id_card_hash TEXT,
-  category TEXT,
-  category_source TEXT,
-  category_confidence REAL,
+
+  primary_category TEXT,
+  primary_category_source TEXT,
+  primary_category_confidence REAL,
+
   region TEXT,
   region_source TEXT,
   region_confidence REAL,
+
   education_level TEXT,
   education_school TEXT,
   education_major TEXT,
+
   review_status TEXT,
   status TEXT DEFAULT 'active',
   archive_dirty INTEGER DEFAULT 0,
@@ -1217,7 +1467,55 @@ CREATE TABLE people (
 );
 ```
 
-### 19.2 files
+说明：
+
+- `primary_category` 是归档主类别。
+- MVP 阶段查询类别多选基于 `primary_category IN (...)`。
+- 后续如支持一人多类别，再新增 `person_categories` 表。
+
+### 19.2 person_categories，可选扩展表
+
+MVP 可以先不实现，但 PRD 预留扩展设计：
+
+```sql
+CREATE TABLE person_categories (
+  id TEXT PRIMARY KEY,
+  person_id TEXT NOT NULL,
+  category TEXT NOT NULL,
+  source TEXT,
+  confidence REAL,
+  is_primary INTEGER DEFAULT 0,
+  status TEXT DEFAULT 'active',
+  created_at TEXT,
+  updated_at TEXT
+);
+```
+
+用途：
+
+```text
+支持一个人员同时拥有多个业务类别。
+```
+
+示例：
+
+```text
+张三_1234
+- 工程，is_primary = 1
+- 消防员，is_primary = 0
+```
+
+其中：
+
+```text
+is_primary = 1
+```
+
+用于归档主目录。
+
+其他类别用于查询筛选和业务标签。
+
+### 19.3 files
 
 ```sql
 CREATE TABLE files (
@@ -1244,14 +1542,14 @@ CREATE TABLE files (
 );
 ```
 
-### 19.3 import_batches
+### 19.4 import_batches
 
 ```sql
 CREATE TABLE import_batches (
   id TEXT PRIMARY KEY,
   batch_type TEXT,
   source_path TEXT,
-  default_category TEXT,
+  default_primary_category TEXT,
   default_region TEXT,
   status TEXT,
   total_files INTEGER,
@@ -1265,7 +1563,7 @@ CREATE TABLE import_batches (
 );
 ```
 
-### 19.4 person_documents
+### 19.5 person_documents
 
 ```sql
 CREATE TABLE person_documents (
@@ -1285,14 +1583,15 @@ CREATE TABLE person_documents (
 );
 ```
 
-### 19.5 licenses
+### 19.6 licenses
 
 ```sql
 CREATE TABLE licenses (
   id TEXT PRIMARY KEY,
   person_id TEXT,
   file_id TEXT,
-  category TEXT,
+  primary_category TEXT,
+  detected_categories TEXT,
   region TEXT,
   raw_license_name TEXT,
   normalized_license_name TEXT,
@@ -1312,7 +1611,13 @@ CREATE TABLE licenses (
 );
 ```
 
-### 19.6 review_items
+说明：
+
+- `primary_category` 表示证书当前归属人员的主类别。
+- `detected_categories` 可以存 JSON 字符串，例如 `["工程", "消防员"]`。
+- MVP 可以只使用 `primary_category`。
+
+### 19.7 review_items
 
 ```sql
 CREATE TABLE review_items (
@@ -1328,7 +1633,7 @@ CREATE TABLE review_items (
 );
 ```
 
-### 19.7 export_jobs
+### 19.8 export_jobs
 
 ```sql
 CREATE TABLE export_jobs (
@@ -1344,7 +1649,7 @@ CREATE TABLE export_jobs (
 );
 ```
 
-### 19.8 license_match_logs
+### 19.9 license_match_logs
 
 ```sql
 CREATE TABLE license_match_logs (
@@ -1358,7 +1663,7 @@ CREATE TABLE license_match_logs (
 );
 ```
 
-### 19.9 audit_logs
+### 19.10 audit_logs
 
 ```sql
 CREATE TABLE audit_logs (
@@ -1388,16 +1693,62 @@ CREATE TABLE audit_logs (
 - 必须给出 confidence。
 - 必须给出 needs_manual_review。
 - 必须给出 evidence。
-- 必须识别类别、地区、人员、资料类型、学历、证书、多人员迹象。
+- 必须识别主类别、候选类别、地区、人员、资料类型、学历、证书、多人员迹象。
+
+类别字段输出要求：
+
+```json
+{
+  "category": {
+    "primary_value": "工程",
+    "candidate_values": ["工程", "消防员"],
+    "source": "folder_path | file_name | ocr_text | user_input | unknown",
+    "confidence": 0.9,
+    "needs_manual_review": false
+  }
+}
+```
+
+说明：
+
+- `primary_value` 用于归档主类别。
+- `candidate_values` 用于记录 AI 判断出的候选类别。
+- 如果候选类别冲突或置信度接近，需要进入待确认。
 
 ### 20.2 查询解析 Prompt
 
 要求：
 
 - 将用户口语查询解析成结构化筛选条件。
+- 类别必须输出为 `categories` 数组。
+- 默认 `category_match_mode` 为 `any`。
 - 不清楚的条件放入 ambiguities。
 - 不直接返回最终人员结果。
 - 查询结果必须由 SQL 根据确认条件产生。
+
+示例：
+
+```json
+{
+  "intent": "find_people",
+  "categories": ["工程", "消防员"],
+  "category_match_mode": "any",
+  "region": "成都",
+  "count": 3,
+  "education_min": "大专",
+  "license_query": "二建证",
+  "require_complete_documents": true,
+  "include_pending_review": false,
+  "ambiguities": []
+}
+```
+
+查询解析时：
+
+- 如果用户说“工程和消防员”，解析为 `categories: ["工程", "消防员"]`。
+- 默认含义是 OR，即属于任一类别即可。
+- 如果用户明确说“同时属于工程和消防员”，返回 `category_match_mode: "all"`。
+- MVP 阶段如果 `category_match_mode = "all"`，页面需要提示该能力暂不完整支持，默认按任一类别查询。
 
 ### 20.3 证书候选分组 Prompt
 
@@ -1466,20 +1817,21 @@ AI 抽取日志
 
 - 能对样本图片执行 OCR。
 - 能将 OCR 文本送入 AI 抽取。
-- 能生成结构化人员、类别、地区、证书信息。
+- 能生成结构化人员、主类别、候选类别、地区、证书信息。
 - 低置信度进入待确认。
 
 ### 22.3 归档验收
 
-- 能按 `类别 / 地区 / 人员 / 资料类型` 复制归档。
+- 能按 `主类别 / 地区 / 人员 / 资料类型` 复制归档。
 - 未识别地区进入未划分区域。
 - 未识别人员进入待确认。
 - 多人员资料进入 `_多人员资料`。
 - 原始文件不被移动和删除。
+- 查询类别多选不会导致一个人员自动重复归档到多个主类别目录。
 
 ### 22.4 修改删除验收
 
-- 能修改人员类别、地区、资料类型。
+- 能修改人员主类别、地区、资料类型。
 - 修改后能标记 archive_dirty。
 - 能预览归档变更。
 - 能重新生成归档。
@@ -1495,11 +1847,21 @@ AI 抽取日志
 - 能导出 Excel。
 - 能复制人员资料到导出目录。
 
+### 22.6 类别多选验收
+
+- 查询条件支持选择多个类别。
+- 自然语言“工程和消防员”能解析成 `categories: ["工程", "消防员"]`。
+- 系统理解卡片能展示多个类别标签。
+- 查询默认按 OR 逻辑执行。
+- 未选择类别时表示不限制类别。
+- 修改条件时类别控件支持多选。
+- 归档目录仍按照人员主类别生成，不因查询多选产生重复归档。
+
 ---
 
 ## 23. 开发优先级
 
-### P0：样本验证版
+### 23.1 P0：样本验证版
 
 目标：验证数据链路是否跑通。
 
@@ -1512,9 +1874,9 @@ AI 抽取日志
 5. 少量图片 OCR。
 6. AI 结构化抽取。
 7. 输出简单 Excel。
-8. 验证类别、地区、人员、证书识别效果。
+8. 验证主类别、候选类别、地区、人员、证书识别效果。
 
-### P1：Electron MVP
+### 23.2 P1：Electron MVP
 
 目标：形成可用工具。
 
@@ -1527,12 +1889,16 @@ AI 抽取日志
 5. 人员归并。
 6. 标准归档生成。
 7. 查询页。
-8. 证书匹配。
-9. Excel 和文件夹导出。
-10. 软删除和回收站。
-11. 重新归档。
+8. 查询页类别多选。
+9. AI 查询解析支持 `categories` 数组。
+10. 查询条件确认卡片支持多类别标签展示。
+11. SQL 查询支持 `primary_category IN (...)`。
+12. 证书匹配。
+13. Excel 和文件夹导出。
+14. 软删除和回收站。
+15. 重新归档。
 
-### P2：完整产品版
+### 23.3 P2：完整产品版
 
 目标：提高稳定性和可维护性。
 
@@ -1548,6 +1914,10 @@ AI 抽取日志
 8. OCR 模型分发。
 9. 自动更新。
 10. 性能优化。
+11. 人员多类别模型 `person_categories`。
+12. 一人多类别查询。
+13. 多类别归档策略。
+14. 多类别导出风险提示。
 
 ---
 
@@ -1563,6 +1933,8 @@ AI 抽取日志
 - 同名人员
 - 多人员资料
 - 证书名称不统一
+- 类别线索不明确
+- 同一资料可能被不同人理解为不同类别
 
 应对：
 
@@ -1570,6 +1942,8 @@ AI 抽取日志
 - 低置信度待确认。
 - 不移动原始文件。
 - 保留操作日志。
+- 主类别人工确认。
+- 查询类别和归档类别分离。
 
 ### 24.2 OCR 准确率风险
 
@@ -1606,6 +1980,7 @@ AI 抽取日志
 - 误删
 - 误覆盖
 - 归档目录混乱
+- 多类别重复归档后同步困难
 
 应对：
 
@@ -1613,12 +1988,13 @@ AI 抽取日志
 - 默认软删除。
 - 归档前展示变更预览。
 - 支持重新生成归档。
+- MVP 阶段归档保持单主类别。
 
 ---
 
 ## 25. 一句话结论
 
-本工具是一个基于 Electron 的 Windows 本地人员资料治理工具。
+Qualidex 是一个基于 Electron 的 Windows 本地人员资料治理工具。
 
 第一版采用：
 
@@ -1635,12 +2011,24 @@ electron-vite + React + TypeScript + SQLite + sqlite-vec + 本地 OCR + 云端�
 AI 做辅助理解
 人工确认处理不确定性
 SQL 负责最终查询
+查询类别支持多选
+归档类别保持单主类别
 ```
 
 最终实现：
 
 ```text
-类别 / 地区 / 人员 / 资料类型
+主类别 / 地区 / 人员 / 资料类型
 ```
 
 的稳定归档结构，并支持新增文件夹、修改、删除、重新归档、条件查询和资料导出。
+
+对于“工程 + 消防员”这类需求：
+
+```text
+查询层支持多类别
+归档层保持单主类别
+数据层使用 primary_category，并预留 person_categories
+AI 层返回 categories 数组
+UI 层使用多选标签
+```
