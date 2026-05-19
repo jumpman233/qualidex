@@ -4,8 +4,24 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import type Database from 'better-sqlite3'
 import { openQualidexDatabase } from './db/connection'
-import { importDirectory } from './services/importService'
+import {
+  importDirectory,
+  listImportBatches,
+  rescanDirectory,
+  rescanImportBatch,
+} from './services/importService'
 import { exportRecognitionReviewExcel } from './services/exportService'
+import {
+  listProcessingTasks,
+  type ProcessingTaskStatus,
+  type ProcessingTaskType,
+} from './services/processingQueueService'
+import {
+  executeNextProcessingTask,
+  executeProcessingBatch,
+} from './services/processingWorkerService'
+import { generateArchivePreview } from './services/archivePreviewService'
+import { writeArchiveFromPreview } from './services/archiveWriterService'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -89,6 +105,38 @@ ipcMain.handle('dialog:select-source-directory', async () => {
 
 ipcMain.handle('files:scan-directory', async (_event, directoryPath: string) => {
   return importDirectory(getDatabase(), directoryPath)
+})
+
+ipcMain.handle('imports:list-batches', async (_event, limit?: number) => {
+  return listImportBatches(getDatabase(), limit)
+})
+
+ipcMain.handle('imports:rescan-directory', async (_event, directoryPath: string) => {
+  return rescanDirectory(getDatabase(), directoryPath)
+})
+
+ipcMain.handle('imports:rescan-batch', async (_event, batchId: string) => {
+  return rescanImportBatch(getDatabase(), batchId)
+})
+
+ipcMain.handle('processing:list-tasks', async (_event, limit?: number, status?: ProcessingTaskStatus) => {
+  return listProcessingTasks(getDatabase(), limit, status)
+})
+
+ipcMain.handle('processing:run-next-task', async (_event, taskType?: ProcessingTaskType) => {
+  return executeNextProcessingTask(getDatabase(), taskType)
+})
+
+ipcMain.handle('processing:run-batch', async (_event, maxTasks?: number, taskType?: ProcessingTaskType) => {
+  return executeProcessingBatch(getDatabase(), maxTasks, taskType)
+})
+
+ipcMain.handle('archive:preview', async (_event, outputRoot: string) => {
+  return generateArchivePreview(getDatabase(), outputRoot)
+})
+
+ipcMain.handle('archive:write', async (_event, outputRoot: string) => {
+  return writeArchiveFromPreview(getDatabase(), outputRoot)
 })
 
 ipcMain.handle('export:recognition-review-excel', async () => {

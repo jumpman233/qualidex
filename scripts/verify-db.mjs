@@ -20,6 +20,8 @@ const modules = [
   ['electron/services/textExtractService.ts', 'electron/services/textExtractService.js'],
   ['electron/services/aiConfig.ts', 'electron/services/aiConfig.js'],
   ['electron/services/aiExtractService.ts', 'electron/services/aiExtractService.js'],
+  ['electron/services/structuredRecognitionService.ts', 'electron/services/structuredRecognitionService.js'],
+  ['electron/services/processingQueueService.ts', 'electron/services/processingQueueService.js'],
   ['electron/services/exportService.ts', 'electron/services/exportService.js'],
   ['electron/services/importService.ts', 'electron/services/importService.js'],
 ]

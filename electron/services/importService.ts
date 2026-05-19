@@ -1,10 +1,9 @@
 import type Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
-import { calculateFileSha256 } from './hashService'
 import { type ScannedFile, scanDirectory, type ScanError } from './fileScanner'
-import { extractTextFromFile } from './textExtractService'
-import { extractAndPersistAiSuggestions } from './aiExtractService'
+import { calculateFileSha256 } from './hashService'
+import { createProcessingTask } from './processingQueueService'
 
 export interface ImportedFile extends ScannedFile {
   id: string
@@ -32,22 +31,133 @@ export interface ImportDirectoryResult {
   skippedDirectories: string[]
 }
 
+export interface ImportBatchSummary {
+  id: string
+  batchType: string | null
+  sourcePath: string | null
+  defaultPrimaryCategory: string | null
+  defaultRegion: string | null
+  status: string | null
+  totalFiles: number | null
+  newFiles: number | null
+  duplicateFiles: number | null
+  failedFiles: number | null
+  startedAt: string | null
+  finishedAt: string | null
+  createdAt: string | null
+  updatedAt: string | null
+}
+
+export type ImportBatchType = 'full_import' | 'add_folder' | 'rescan'
+export type RescanMode = 'metadata_only' | 'failed_only' | 'all_files'
+
+export interface ImportDirectoryOptions {
+  batchType?: ImportBatchType
+  defaultPrimaryCategory?: string | null
+  defaultRegion?: string | null
+  rescanMode?: RescanMode
+}
+
 interface ExistingHashRow {
   id: string
 }
 
+interface ImportBatchRow {
+  id: string
+  batch_type: string | null
+  source_path: string | null
+  default_primary_category: string | null
+  default_region: string | null
+  status: string | null
+  total_files: number | null
+  new_files: number | null
+  duplicate_files: number | null
+  failed_files: number | null
+  started_at: string | null
+  finished_at: string | null
+  created_at: string | null
+  updated_at: string | null
+}
+
 const PREVIEW_LIMIT = 200
-const TEXT_PREVIEW_LIMIT = 500
+
+export function listImportBatches(db: Database.Database, limit = 50): ImportBatchSummary[] {
+  const safeLimit = Math.min(Math.max(Math.trunc(limit), 1), 200)
+  const rows = db.prepare(`
+    SELECT
+      id,
+      batch_type,
+      source_path,
+      default_primary_category,
+      default_region,
+      status,
+      total_files,
+      new_files,
+      duplicate_files,
+      failed_files,
+      started_at,
+      finished_at,
+      created_at,
+      updated_at
+    FROM import_batches
+    ORDER BY created_at DESC, rowid DESC
+    LIMIT ?
+  `).all(safeLimit) as ImportBatchRow[]
+
+  return rows.map(toImportBatchSummary)
+}
+
+export async function rescanDirectory(
+  db: Database.Database,
+  sourcePath: string,
+  options: Omit<ImportDirectoryOptions, 'batchType'> = {},
+): Promise<ImportDirectoryResult> {
+  return importDirectory(db, sourcePath, {
+    ...options,
+    batchType: 'rescan',
+  })
+}
+
+export async function rescanImportBatch(
+  db: Database.Database,
+  batchId: string,
+  options: Omit<ImportDirectoryOptions, 'batchType'> = {},
+): Promise<ImportDirectoryResult> {
+  const batch = db.prepare(`
+    SELECT
+      source_path,
+      default_primary_category,
+      default_region
+    FROM import_batches
+    WHERE id = ?
+    LIMIT 1
+  `).get(batchId) as Pick<
+    ImportBatchRow,
+    'source_path' | 'default_primary_category' | 'default_region'
+  > | undefined
+
+  if (!batch?.source_path) {
+    throw new Error(`Import batch not found or has no source path: ${batchId}`)
+  }
+
+  return rescanDirectory(db, batch.source_path, {
+    ...options,
+    defaultPrimaryCategory: options.defaultPrimaryCategory ?? batch.default_primary_category,
+    defaultRegion: options.defaultRegion ?? batch.default_region,
+  })
+}
 
 export async function importDirectory(
   db: Database.Database,
   sourcePath: string,
+  options: ImportDirectoryOptions = {},
 ): Promise<ImportDirectoryResult> {
   const startedAt = new Date().toISOString()
   const batchId = randomUUID()
+  const batchType = options.batchType ?? 'full_import'
   const scanResult = await scanDirectory(sourcePath, { maxPreviewFiles: Number.MAX_SAFE_INTEGER })
 
-  const insertBatch = db.prepare(`
+  db.prepare(`
     INSERT INTO import_batches (
       id,
       batch_type,
@@ -58,6 +168,8 @@ export async function importDirectory(
       duplicate_files,
       failed_files,
       started_at,
+      default_primary_category,
+      default_region,
       created_at,
       updated_at
     )
@@ -71,17 +183,19 @@ export async function importDirectory(
       0,
       0,
       @startedAt,
+      @defaultPrimaryCategory,
+      @defaultRegion,
       @startedAt,
       @startedAt
     )
-  `)
-
-  insertBatch.run({
+  `).run({
     id: batchId,
-    batchType: 'source_directory',
+    batchType,
     sourcePath: scanResult.rootPath,
     status: 'running',
     startedAt,
+    defaultPrimaryCategory: options.defaultPrimaryCategory ?? null,
+    defaultRegion: options.defaultRegion ?? null,
   })
 
   const insertFile = db.prepare(`
@@ -94,7 +208,11 @@ export async function importDirectory(
       sha256,
       source_batch_id,
       source_root_path,
+      relative_path,
       parent_folder,
+      path_segments,
+      path_parse_result,
+      path_confidence,
       ocr_text,
       ocr_status,
       process_status,
@@ -112,7 +230,11 @@ export async function importDirectory(
       @sha256,
       @sourceBatchId,
       @sourceRootPath,
+      @relativePath,
       @parentFolder,
+      @pathSegments,
+      @pathParseResult,
+      @pathConfidence,
       @ocrText,
       @ocrStatus,
       @processStatus,
@@ -145,26 +267,10 @@ export async function importDirectory(
       const sha256 = await calculateFileSha256(file.path)
       const existingHash = findExistingHash.get(sha256) as ExistingHashRow | undefined
       const importStatus = existingHash ? 'duplicate' : 'new'
-      const extraction = existingHash
-        ? {
-            text: '',
-            status: 'duplicate',
-            processStatus: 'duplicate',
-            error: null,
-          }
-        : await extractTextFromFile(file.path, file.ext)
-      const aiResult = !existingHash && extraction.text.trim()
-        ? await extractAndPersistAiSuggestions(db, {
-            fileId,
-            fileName: file.name,
-            originalPath: file.path,
-            parentFolder: path.dirname(file.relativePath),
-            ocrText: extraction.text,
-          })
-        : {
-            status: existingHash ? 'duplicate' : 'ai_skipped',
-            error: extraction.text.trim() ? null : '没有 OCR 文本，跳过 AI 抽取。',
-          }
+      const parentFolder = path.dirname(file.relativePath)
+      const ocrStatus = existingHash ? 'duplicate' : 'pending'
+      const processStatus = existingHash ? 'duplicate' : 'pending_ocr'
+      const aiStatus = existingHash ? 'duplicate' : 'pending'
 
       if (existingHash) {
         duplicateFiles += 1
@@ -181,15 +287,37 @@ export async function importDirectory(
         sha256,
         sourceBatchId: batchId,
         sourceRootPath: scanResult.rootPath,
-        parentFolder: path.dirname(file.relativePath),
-        ocrText: extraction.text,
-        ocrStatus: extraction.status,
-        processStatus: resolveProcessStatus(extraction.processStatus, aiResult.status),
-        processError: joinProcessErrors(extraction.error, aiResult.error),
+        relativePath: file.relativePath,
+        parentFolder,
+        pathSegments: JSON.stringify(getPathSegments(file.relativePath)),
+        pathParseResult: null,
+        pathConfidence: null,
+        ocrText: null,
+        ocrStatus,
+        processStatus,
+        processError: null,
         archiveStatus: 'pending',
         createdAt: now,
         updatedAt: now,
       })
+
+      createProcessingTask(db, {
+        taskType: 'ocr',
+        fileId,
+        batchId,
+        status: existingHash ? 'skipped' : 'pending',
+        resultSummary: existingHash ? 'duplicate_file' : null,
+      })
+
+      if (existingHash) {
+        createProcessingTask(db, {
+          taskType: 'ai_extract',
+          fileId,
+          batchId,
+          status: 'skipped',
+          resultSummary: 'duplicate_file',
+        })
+      }
 
       if (importedFiles.length < PREVIEW_LIMIT) {
         importedFiles.push({
@@ -197,11 +325,11 @@ export async function importDirectory(
           id: fileId,
           sha256,
           importStatus,
-          processStatus: resolveProcessStatus(extraction.processStatus, aiResult.status),
-          processError: joinProcessErrors(extraction.error, aiResult.error),
-          ocrStatus: extraction.status,
-          ocrTextPreview: createTextPreview(extraction.text),
-          aiStatus: aiResult.status,
+          processStatus,
+          processError: null,
+          ocrStatus,
+          ocrTextPreview: '',
+          aiStatus,
         })
       }
     } catch (error) {
@@ -222,7 +350,11 @@ export async function importDirectory(
         sha256: null,
         sourceBatchId: batchId,
         sourceRootPath: scanResult.rootPath,
+        relativePath: file.relativePath,
         parentFolder: path.dirname(file.relativePath),
+        pathSegments: JSON.stringify(getPathSegments(file.relativePath)),
+        pathParseResult: null,
+        pathConfidence: null,
         ocrText: null,
         ocrStatus: 'failed',
         processStatus: 'failed',
@@ -230,6 +362,22 @@ export async function importDirectory(
         archiveStatus: 'pending',
         createdAt: now,
         updatedAt: now,
+      })
+
+      createProcessingTask(db, {
+        taskType: 'ocr',
+        fileId,
+        batchId,
+        status: 'failed',
+        error: message,
+      })
+
+      createProcessingTask(db, {
+        taskType: 'ai_extract',
+        fileId,
+        batchId,
+        status: 'skipped',
+        resultSummary: 'ocr_failed',
       })
 
       if (importedFiles.length < PREVIEW_LIMIT) {
@@ -295,25 +443,25 @@ function getErrorMessage(error: unknown): string {
   return String(error)
 }
 
-function createTextPreview(text: string): string {
-  const normalizedText = text.replace(/\s+/g, ' ').trim()
-
-  if (normalizedText.length <= TEXT_PREVIEW_LIMIT) {
-    return normalizedText
-  }
-
-  return `${normalizedText.slice(0, TEXT_PREVIEW_LIMIT)}...`
+function getPathSegments(relativePath: string): string[] {
+  return relativePath.split(path.sep).filter(Boolean)
 }
 
-function resolveProcessStatus(textStatus: string, aiStatus: string): string {
-  if (aiStatus === 'ai_extracted' || aiStatus === 'needs_review' || aiStatus === 'ai_extract_failed') {
-    return aiStatus
+function toImportBatchSummary(row: ImportBatchRow): ImportBatchSummary {
+  return {
+    id: row.id,
+    batchType: row.batch_type,
+    sourcePath: row.source_path,
+    defaultPrimaryCategory: row.default_primary_category,
+    defaultRegion: row.default_region,
+    status: row.status,
+    totalFiles: row.total_files,
+    newFiles: row.new_files,
+    duplicateFiles: row.duplicate_files,
+    failedFiles: row.failed_files,
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   }
-
-  return textStatus
-}
-
-function joinProcessErrors(...errors: Array<string | null | undefined>): string | null {
-  const messages = errors.filter((error): error is string => Boolean(error))
-  return messages.length > 0 ? messages.join('\n') : null
 }

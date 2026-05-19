@@ -26,6 +26,12 @@ button:hover {
   transform: translateY(-1px);
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
+  transform: none;
+}
+
 .workbench-shell {
   min-height: 100vh;
   overflow-x: hidden;
@@ -636,6 +642,129 @@ button:hover {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.import-control-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 12px;
+  align-items: stretch;
+}
+
+.directory-field {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  border: 1px solid #d8e3f7;
+  border-radius: 10px;
+  padding: 10px 14px;
+  background: #f8fbff;
+}
+
+.directory-field span {
+  color: #667085;
+  font-weight: 700;
+}
+
+.directory-field strong {
+  min-width: 0;
+  color: #101828;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-list,
+.task-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.status-row,
+.task-row {
+  display: grid;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid #e4e9f2;
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: #ffffff;
+}
+
+.status-row {
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+}
+
+.task-row {
+  grid-template-columns: minmax(0, 1fr) auto auto minmax(160px, 0.7fr);
+}
+
+.status-row div,
+.task-row div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.status-row strong,
+.task-row strong {
+  min-width: 0;
+  color: #101828;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-row span,
+.task-row span,
+.task-row small {
+  min-width: 0;
+  color: #667085;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 64px;
+  min-height: 28px;
+  border-radius: 999px;
+  padding: 0 10px;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.status-pill.green {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.status-pill.orange {
+  background: #ffedd5;
+  color: #c2410c;
+}
+
+.status-pill.blue {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.status-pill.red {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.status-pill.gray {
+  background: #eef2f7;
+  color: #475467;
+}
+
+.import-empty {
+  margin-top: 14px;
+}
+
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -785,12 +914,106 @@ button:hover {
 }
 
 .risk-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin: 16px 0;
   border: 1px solid #fed7aa;
   border-radius: 12px;
   padding: 14px 16px;
   background: #fff7ed;
   color: #9a3412;
+}
+
+.archive-preview-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.archive-preview-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.archive-preview-controls label {
+  display: grid;
+  gap: 7px;
+}
+
+.archive-preview-controls span {
+  color: #667085;
+  font-weight: 700;
+}
+
+.archive-preview-controls input {
+  min-height: 42px;
+  border: 1px solid #d8e3f7;
+  border-radius: 10px;
+  padding: 0 12px;
+  background: #ffffff;
+  color: #101828;
+  outline: 0;
+}
+
+.archive-preview-controls input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.archive-preview-summary {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  margin-top: 0;
+}
+
+.archive-write-result {
+  display: grid;
+  gap: 12px;
+}
+
+.archive-preview-list {
+  display: grid;
+  gap: 10px;
+}
+
+.archive-preview-list article {
+  display: grid;
+  gap: 7px;
+  border: 1px solid #e4e9f2;
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: #ffffff;
+}
+
+.archive-preview-list article > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.archive-preview-list strong {
+  color: #101828;
+}
+
+.archive-preview-list span,
+.archive-preview-list p,
+.archive-preview-list small {
+  color: #667085;
+}
+
+.archive-preview-list p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.archive-preview-list small {
+  color: #c2410c;
+}
+
+.archive-preview-empty {
+  min-height: 118px;
 }
 
 @media (max-width: 1100px) {
@@ -877,7 +1100,12 @@ button:hover {
   .form-grid,
   .review-grid,
   .summary-grid,
-  .progress-list {
+  .progress-list,
+  .import-control-row,
+  .status-row,
+  .task-row,
+  .archive-preview-controls,
+  .archive-preview-summary {
     grid-template-columns: 1fr;
   }
 

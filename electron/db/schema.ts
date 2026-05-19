@@ -49,7 +49,10 @@ export function initializeSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_files_sha256 ON files(sha256);
     CREATE INDEX IF NOT EXISTS idx_files_source_batch_id ON files(source_batch_id);
     CREATE INDEX IF NOT EXISTS idx_files_original_path ON files(original_path);
+    CREATE INDEX IF NOT EXISTS idx_files_source_root_path ON files(source_root_path);
     CREATE INDEX IF NOT EXISTS idx_import_batches_created_at ON import_batches(created_at);
+    CREATE INDEX IF NOT EXISTS idx_import_batches_source_path ON import_batches(source_path);
+    CREATE INDEX IF NOT EXISTS idx_import_batches_batch_type ON import_batches(batch_type);
 
     CREATE TABLE IF NOT EXISTS people (
       id TEXT PRIMARY KEY,
@@ -106,6 +109,11 @@ export function initializeSchema(db: Database.Database): void {
       valid_until TEXT,
       recognition_status TEXT,
       recognition_reason TEXT,
+      issuer_authority_level TEXT,
+      issuer_authority_score INTEGER,
+      issuer_authority_source TEXT,
+      issuer_authority_reason TEXT,
+      issuer_authority_review_status TEXT,
       confidence REAL,
       needs_review INTEGER,
       ocr_text TEXT,
@@ -146,6 +154,27 @@ export function initializeSchema(db: Database.Database): void {
       FOREIGN KEY (file_id) REFERENCES files(id)
     );
 
+    CREATE TABLE IF NOT EXISTS processing_tasks (
+      id TEXT PRIMARY KEY,
+      task_type TEXT NOT NULL,
+      status TEXT NOT NULL,
+      file_id TEXT,
+      batch_id TEXT,
+      priority INTEGER DEFAULT 0,
+      attempts INTEGER DEFAULT 0,
+      max_attempts INTEGER DEFAULT 3,
+      error TEXT,
+      result_summary TEXT,
+      queued_at TEXT,
+      locked_at TEXT,
+      started_at TEXT,
+      finished_at TEXT,
+      created_at TEXT,
+      updated_at TEXT,
+      FOREIGN KEY (file_id) REFERENCES files(id),
+      FOREIGN KEY (batch_id) REFERENCES import_batches(id)
+    );
+
     CREATE TABLE IF NOT EXISTS audit_logs (
       id TEXT PRIMARY KEY,
       target_type TEXT,
@@ -162,5 +191,33 @@ export function initializeSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_licenses_file_id ON licenses(file_id);
     CREATE INDEX IF NOT EXISTS idx_review_items_ref_id ON review_items(ref_id);
     CREATE INDEX IF NOT EXISTS idx_ai_extract_results_file_id ON ai_extract_results(file_id);
+    CREATE INDEX IF NOT EXISTS idx_processing_tasks_status ON processing_tasks(status);
+    CREATE INDEX IF NOT EXISTS idx_processing_tasks_file_id ON processing_tasks(file_id);
+    CREATE INDEX IF NOT EXISTS idx_processing_tasks_batch_id ON processing_tasks(batch_id);
+    CREATE INDEX IF NOT EXISTS idx_processing_tasks_type_status ON processing_tasks(task_type, status);
   `)
+
+  ensureColumn(db, 'files', 'relative_path', 'TEXT')
+  ensureColumn(db, 'files', 'path_segments', 'TEXT')
+  ensureColumn(db, 'files', 'path_parse_result', 'TEXT')
+  ensureColumn(db, 'files', 'path_confidence', 'REAL')
+  ensureColumn(db, 'licenses', 'issuer_authority_level', 'TEXT')
+  ensureColumn(db, 'licenses', 'issuer_authority_score', 'INTEGER')
+  ensureColumn(db, 'licenses', 'issuer_authority_source', 'TEXT')
+  ensureColumn(db, 'licenses', 'issuer_authority_reason', 'TEXT')
+  ensureColumn(db, 'licenses', 'issuer_authority_review_status', 'TEXT')
+}
+
+function ensureColumn(
+  db: Database.Database,
+  tableName: string,
+  columnName: string,
+  definition: string,
+): void {
+  const rows = db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>
+  const hasColumn = rows.some((row) => row.name === columnName)
+
+  if (!hasColumn) {
+    db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`)
+  }
 }

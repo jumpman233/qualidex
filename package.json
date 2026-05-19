@@ -15,6 +15,13 @@
     "verify:text-extract": "node scripts/verify-text-extract.mjs",
     "verify:ai-extract": "node scripts/verify-ai-extract.mjs",
     "verify:excel-export": "node scripts/verify-excel-export.mjs",
+    "verify:import-batches": "node scripts/verify-import-batches.mjs",
+    "verify:processing-queue": "node scripts/verify-processing-queue.mjs",
+    "verify:processing-worker": "node scripts/verify-processing-worker.mjs",
+    "verify:processing-worker-ai-success": "node scripts/verify-processing-worker-ai-success.mjs",
+    "verify:structured-recognition": "node scripts/verify-structured-recognition.mjs",
+    "verify:archive-preview": "node scripts/verify-archive-preview.mjs",
+    "verify:archive-write": "node scripts/verify-archive-write.mjs",
     "verify:db": "pnpm run rebuild:native && node scripts/verify-db.mjs"
   },
   "dependencies": {

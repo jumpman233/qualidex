@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import { loadAiModelConfig, type AiModelConfig } from './aiConfig'
+import { persistStructuredRecognition } from './structuredRecognitionService'
 
 export interface AiExtractionInput {
   fileId: string
@@ -103,6 +104,7 @@ export async function extractAndPersistAiSuggestions(
     const status = reviewReasons.length > 0 ? 'needs_review' : 'ai_extracted'
     persistAiResult(db, input, config, status, result, null, reviewReasons)
     persistReviewItems(db, input.fileId, reviewReasons, result)
+    persistStructuredRecognition(db, input, result, reviewReasons)
 
     return {
       status,

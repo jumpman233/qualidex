@@ -12,6 +12,7 @@ const tempModuleRoot = path.join(tempRoot, 'modules')
 const modules = [
   ['electron/services/aiConfig.ts', 'electron/services/aiConfig.js'],
   ['electron/services/aiExtractService.ts', 'electron/services/aiExtractService.js'],
+  ['electron/services/structuredRecognitionService.ts', 'electron/services/structuredRecognitionService.js'],
 ]
 
 try {
