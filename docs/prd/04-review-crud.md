@@ -1,10 +1,10 @@
 # Qualidex PRD 拆分文档
 
-> 来源：Qualidex PRD V1.2  
+> 来源：Qualidex PRD V1.4  
 > 产品形态：Windows 本地桌面工具  
 > 技术栈：Electron + electron-vite + React + TypeScript + SQLite + sqlite-vec + 本地 OCR + 云端文本 AI API
 
-## 10. 人员归并功能
+## 11. 人员归并功能
 
 ### 10.1 归并规则
 
@@ -44,7 +44,7 @@
 所有操作写入操作日志。
 
 ---
-## 11. 待确认功能
+## 12. 待确认功能
 
 ### 11.1 待确认类型
 
@@ -63,6 +63,10 @@ education_uncertain
 multi_person_file
 ocr_failed
 ai_extract_failed
+path_ocr_conflict
+path_category_conflict
+path_region_conflict
+path_person_conflict
 ```
 
 ### 11.2 待确认页面能力
@@ -95,7 +99,7 @@ MVP 可支持简单批量操作：
 ```
 
 ---
-## 15. 修改功能
+## 16. 修改功能
 
 ### 15.1 可修改对象
 
@@ -155,7 +159,7 @@ MVP 可支持简单批量操作：
 这里的“移动”只作用于归档输出目录，不作用于原始资料目录。
 
 ---
-## 16. 删除功能
+## 17. 删除功能
 
 ### 16.1 删除归档结果
 

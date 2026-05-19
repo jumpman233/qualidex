@@ -1,10 +1,10 @@
 # Qualidex PRD 拆分文档
 
-> 来源：Qualidex PRD V1.2  
+> 来源：Qualidex PRD V1.4  
 > 产品形态：Windows 本地桌面工具  
 > 技术栈：Electron + electron-vite + React + TypeScript + SQLite + sqlite-vec + 本地 OCR + 云端文本 AI API
 
-## 18. 页面设计
+## 19. 页面设计
 
 ### 18.1 页面整体方向
 

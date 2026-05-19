@@ -1,10 +1,10 @@
 # Qualidex PRD 拆分文档
 
-> 来源：Qualidex PRD V1.2  
+> 来源：Qualidex PRD V1.4  
 > 产品形态：Windows 本地桌面工具  
 > 技术栈：Electron + electron-vite + React + TypeScript + SQLite + sqlite-vec + 本地 OCR + 云端文本 AI API
 
-## 19. 数据库设计
+## 20. 数据库设计
 
 ### 19.1 people
 
@@ -96,9 +96,15 @@ CREATE TABLE files (
   size_bytes INTEGER,
   sha256 TEXT,
   mime_type TEXT,
+
   source_batch_id TEXT,
   source_root_path TEXT,
+  relative_path TEXT,
   parent_folder TEXT,
+  path_segments TEXT,
+  path_parse_result TEXT,
+  path_confidence REAL,
+
   ocr_text TEXT,
   ocr_status TEXT,
   process_status TEXT,
@@ -111,6 +117,33 @@ CREATE TABLE files (
   updated_at TEXT
 );
 ```
+
+#### 路径字段说明
+
+`relative_path` 是文件相对 `source_root_path` 的路径。
+
+`path_segments` 建议存 JSON 字符串，例如：
+
+```json
+["工程", "成都", "张三", "二建证.pdf"]
+```
+
+`path_parse_result` 建议存 JSON 字符串，例如：
+
+```json
+{
+  "candidate_primary_category": "工程",
+  "candidate_region": "成都",
+  "candidate_person_name": "张三",
+  "candidate_document_type": "license",
+  "candidate_license_hint": "二建证",
+  "evidence": ["路径层级包含工程", "父级目录为张三"]
+}
+```
+
+`path_confidence` 表示路径语义解析置信度。
+
+路径解析结果只作为候选信息，不作为最终人工确认结果。
 
 ### 19.4 import_batches
 
@@ -163,13 +196,22 @@ CREATE TABLE licenses (
   primary_category TEXT,
   detected_categories TEXT,
   region TEXT,
+
   raw_license_name TEXT,
   normalized_license_name TEXT,
   license_category TEXT,
   issuing_authority TEXT,
   valid_until TEXT,
+
   recognition_status TEXT,
   recognition_reason TEXT,
+
+  issuer_authority_level TEXT,
+  issuer_authority_score INTEGER,
+  issuer_authority_source TEXT,
+  issuer_authority_reason TEXT,
+  issuer_authority_review_status TEXT,
+
   confidence REAL,
   needs_review INTEGER,
   ocr_text TEXT,
@@ -187,7 +229,93 @@ CREATE TABLE licenses (
 - `detected_categories` 可以存 JSON 字符串，例如 `["工程", "消防员"]`。
 - MVP 可以只使用 `primary_category`。
 
-### 19.7 review_items
+#### 颁发机构权威性字段说明
+
+`issuer_authority_*` 字段用于 P2 阶段表达颁发机构权威性 / 正当性 / 可信度。
+
+字段建议：
+
+```text
+issuer_authority_level:
+- high
+- medium
+- low
+- unknown
+
+issuer_authority_score:
+- 0 到 100 的整数分数
+
+issuer_authority_source:
+- manual
+- ai
+- rule
+- unknown
+
+issuer_authority_review_status:
+- confirmed
+- pending_review
+- rejected
+```
+
+设计要求：
+
+- 人工标记可以直接写入这些字段。
+- AI / 规则识别结果也可以写入，但应标记来源。
+- 未确认结果应进入 `pending_review`。
+- 不要用这些字段替代 `recognition_status`。
+- `recognition_status` 仍然表示证书在本次业务中是否被认可。
+
+
+### 19.7 issuers，P2 可选扩展表
+
+P2 阶段如果需要沉淀颁发机构权威性库，可新增独立 `issuers` 表。
+
+```sql
+CREATE TABLE issuers (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  normalized_name TEXT,
+  authority_level TEXT,
+  authority_score INTEGER,
+  authority_source TEXT,
+  authority_reason TEXT,
+  review_status TEXT,
+  created_at TEXT,
+  updated_at TEXT
+);
+```
+
+用途：
+
+```text
+同一个机构只需要标记一次
+后续所有证书复用这个机构权威性
+支持机构别名归一化
+支持人工维护权威机构库
+支持 AI / 规则辅助识别
+支持批量更新同机构证书
+```
+
+未来 `licenses` 表可增加：
+
+```sql
+issuer_id TEXT
+```
+
+用于关联 `issuers.id`。
+
+示例：
+
+```text
+中华人民共和国住房和城乡建设部
+住建部
+住房城乡建设部
+```
+
+可归一到同一个 `issuer_id`。
+
+
+### 19.8 review_items
 
 ```sql
 CREATE TABLE review_items (
@@ -203,7 +331,7 @@ CREATE TABLE review_items (
 );
 ```
 
-### 19.8 export_jobs
+### 19.9 export_jobs
 
 ```sql
 CREATE TABLE export_jobs (
@@ -219,7 +347,7 @@ CREATE TABLE export_jobs (
 );
 ```
 
-### 19.9 license_match_logs
+### 19.10 license_match_logs
 
 ```sql
 CREATE TABLE license_match_logs (
@@ -233,7 +361,7 @@ CREATE TABLE license_match_logs (
 );
 ```
 
-### 19.10 audit_logs
+### 19.11 audit_logs
 
 ```sql
 CREATE TABLE audit_logs (

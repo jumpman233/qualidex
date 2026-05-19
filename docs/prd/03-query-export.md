@@ -1,10 +1,10 @@
 # Qualidex PRD 拆分文档
 
-> 来源：Qualidex PRD V1.2  
+> 来源：Qualidex PRD V1.4  
 > 产品形态：Windows 本地桌面工具  
 > 技术栈：Electron + electron-vite + React + TypeScript + SQLite + sqlite-vec + 本地 OCR + 云端文本 AI API
 
-## 12. 证书匹配功能
+## 13. 证书匹配功能
 
 ### 12.1 入库阶段
 
@@ -70,7 +70,82 @@ SQL 精确查询人员
 AI 只做建议，用户最终确认。
 
 ---
-## 13. 查询功能
+
+### 12.4 证书颁发机构权威性，P2 预留
+
+部分证书虽然名称相近，但颁发机构的权威性、正当性和业务认可度可能不同。
+
+系统需要在设计层面预留“颁发机构权威性”能力，用于表达：
+
+- 发证机构是否权威。
+- 发证机构是否正规。
+- 证书是否来自业务认可机构。
+- 该判断来自人工、AI、规则还是未知来源。
+- 该判断是否已经被人工确认。
+
+该能力优先级为 P2，MVP 阶段不强制实现完整机构库和机构评分流程，但需要在数据模型中预留空间。
+
+建议字段概念：
+
+```text
+issuer_authority_level
+issuer_authority_score
+issuer_authority_source
+issuer_authority_reason
+issuer_authority_review_status
+```
+
+字段含义：
+
+```text
+issuer_authority_level:
+- high
+- medium
+- low
+- unknown
+
+issuer_authority_score:
+- 0 到 100 的整数分数
+
+issuer_authority_source:
+- manual
+- ai
+- rule
+- unknown
+
+issuer_authority_review_status:
+- confirmed
+- pending_review
+- rejected
+```
+
+设计原则：
+
+- 人工标记优先级最高。
+- AI / 规则识别只能作为建议。
+- 不确定时进入待确认。
+- 颁发机构权威性不应混入 `recognition_status`。
+- `recognition_status` 表示证书在本次业务中是否认可。
+- `issuer_authority_*` 表示颁发机构本身的权威性 / 正当性 / 可信度。
+
+示例：
+
+```text
+证书 A：
+- 证书名称：二级建造师注册证书
+- 发证机构：住房和城乡建设相关主管部门
+- issuer_authority_level：high
+- recognition_status：recognized
+
+证书 B：
+- 证书名称：消防培训合格证
+- 发证机构：某某培训学校
+- issuer_authority_level：low
+- recognition_status：uncertain
+```
+
+P2 阶段可扩展独立 `issuers` 表，用于维护颁发机构权威性库、机构别名和人工确认结果。
+## 14. 查询功能
 
 ### 13.1 自然语言查询
 
@@ -195,7 +270,33 @@ AI 解析结果：
 加入导出
 ```
 
-### 13.5 查询 SQL 规则
+### 13.5 颁发机构权威性查询，P2 预留
+
+未来可支持用户输入：
+
+```text
+找成都有二建证，并且颁发机构权威性高的人
+```
+
+AI 解析结果可预留：
+
+```json
+{
+  "license_query": "二建证",
+  "issuer_authority_min_score": 70,
+  "issuer_authority_levels": ["high", "medium"]
+}
+```
+
+SQL 层可按预留字段筛选：
+
+```sql
+WHERE issuer_authority_score >= 70
+```
+
+MVP 阶段该能力不进入核心查询流程，仅在数据模型和 Prompt 设计中预留。
+
+### 13.6 查询 SQL 规则
 
 MVP 阶段类别查询使用主类别字段。
 
@@ -212,7 +313,7 @@ AND region = '成都';
 如果用户未选择类别，则不添加类别限制。
 
 ---
-## 14. 导出功能
+## 15. 导出功能
 
 ### 14.1 Excel 导出
 
@@ -261,7 +362,22 @@ Excel 字段：
 仅导出清单中标记路径
 ```
 
-### 14.4 多类别查询导出提示
+### 14.4 证书颁发机构权威性导出提示，P2 预留
+
+如果未来启用颁发机构权威性评估，导出 Excel 可增加字段：
+
+```text
+颁发机构
+颁发机构权威性等级
+颁发机构权威性分数
+权威性判断来源
+权威性确认状态
+权威性判断原因
+```
+
+MVP 阶段可以只保留 `issuing_authority` 字段，不强制展示权威性评分。
+
+### 14.5 多类别查询导出提示
 
 如果本次查询选择了多个类别，需要在导出说明中展示：
 

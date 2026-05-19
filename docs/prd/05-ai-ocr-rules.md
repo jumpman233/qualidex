@@ -1,10 +1,149 @@
 # Qualidex PRD 拆分文档
 
-> 来源：Qualidex PRD V1.2  
+> 来源：Qualidex PRD V1.4  
 > 产品形态：Windows 本地桌面工具  
 > 技术栈：Electron + electron-vite + React + TypeScript + SQLite + sqlite-vec + 本地 OCR + 云端文本 AI API
 
-## 9. OCR 与 AI 抽取功能
+## 9. 路径语义解析功能
+
+### 9.1 路径信息范围
+
+系统扫描文件时，应保留并解析路径相关信息。
+
+路径信息包括：
+
+```text
+original_path       原始完整路径
+source_root_path    来源根目录
+relative_path       相对来源根目录的相对路径
+parent_folder       直接父级文件夹
+file_name           文件名
+path_segments       路径层级数组
+```
+
+示例：
+
+```text
+D:\人员资料\工程\成都\张三\二建证.pdf
+```
+
+解析结果：
+
+```json
+{
+  "original_path": "D:\\人员资料\\工程\\成都\\张三\\二建证.pdf",
+  "source_root_path": "D:\\人员资料",
+  "relative_path": "工程\\成都\\张三\\二建证.pdf",
+  "parent_folder": "张三",
+  "file_name": "二建证.pdf",
+  "path_segments": ["工程", "成都", "张三", "二建证.pdf"]
+}
+```
+
+### 9.2 路径语义候选结果
+
+系统应根据路径信息生成候选判断，而不是直接作为最终结果。
+
+候选结果包括：
+
+```json
+{
+  "candidate_primary_category": "工程",
+  "candidate_region": "成都",
+  "candidate_person_name": "张三",
+  "candidate_document_type": "license",
+  "candidate_license_hint": "二建证",
+  "confidence": 0.85,
+  "evidence": [
+    "路径层级第 1 层为工程",
+    "路径层级第 2 层为成都",
+    "父级文件夹为张三",
+    "文件名包含二建证"
+  ]
+}
+```
+
+### 9.3 路径语义判断优先级
+
+路径语义与 OCR / AI 抽取需要综合判断。
+
+建议优先级：
+
+```text
+1. 用户导入时手动指定的主类别 / 地区
+2. 明确目录层级中的主类别 / 地区 / 人员名
+3. 文件名中的人员名 / 证书名 / 资料类型
+4. OCR 文本中的结构化信息
+5. AI 综合判断
+6. 人工确认
+```
+
+注意：
+
+- 用户手动指定优先级最高。
+- 路径信息通常对主类别、地区、人员名很有参考价值。
+- OCR 文本通常对证书名称、证书编号、颁发机构、有效期更有参考价值。
+- 路径与 OCR 冲突时，不应自动覆盖，应进入待确认。
+
+### 9.4 路径低信息量判断
+
+以下文件夹名或路径片段信息量较低，不应作为高置信判断依据：
+
+```text
+新建文件夹
+资料
+扫描件
+图片
+照片
+文件
+临时
+待整理
+未命名
+其他
+```
+
+如果路径主要由低信息量片段组成，应降低路径置信度。
+
+### 9.5 路径冲突待确认
+
+以下情况必须进入待确认：
+
+- 路径中人员名与 OCR 识别人员名不一致。
+- 路径中地区与证书文本或业务规则地区不一致。
+- 路径中主类别与 OCR / AI 判断主类别不一致。
+- 路径显示单人目录，但文件内容识别出多个人。
+- 路径层级无法匹配预期结构。
+- 文件名显示证书类型，但 OCR 识别为其他资料类型。
+
+### 9.6 路径语义解析与 AI 的关系
+
+路径语义解析可以先由规则完成，再作为 AI 输入的一部分。
+
+AI 输入中应包含：
+
+```json
+{
+  "file_name": "二建证.pdf",
+  "original_path": "D:\\人员资料\\工程\\成都\\张三\\二建证.pdf",
+  "source_root_path": "D:\\人员资料",
+  "relative_path": "工程\\成都\\张三\\二建证.pdf",
+  "parent_folder": "张三",
+  "path_segments": ["工程", "成都", "张三", "二建证.pdf"],
+  "path_parse_hint": {
+    "candidate_primary_category": "工程",
+    "candidate_region": "成都",
+    "candidate_person_name": "张三",
+    "candidate_document_type": "license",
+    "candidate_license_hint": "二建证",
+    "confidence": 0.85
+  }
+}
+```
+
+AI 应综合路径、文件名、OCR 文本进行结构化抽取。
+
+路径信息不能替代人工确认。
+## 10. OCR 与 AI 抽取功能
 
 ### 9.1 OCR 输入
 
@@ -24,6 +163,9 @@ AI 输入不得包含原图，只包含：
 OCR 文本
 文件名
 原始路径
+相对路径
+路径层级数组
+路径语义解析候选结果
 上级文件夹名
 用户指定主类别
 用户指定地区
@@ -63,6 +205,13 @@ AI 输出 JSON：
     "license_category": "建筑工程注册类执业资格",
     "issuing_authority": "某某住建部门",
     "valid_until": "2026-12-31",
+    "issuer_authority": {
+      "level": "unknown",
+      "score": null,
+      "source": "unknown",
+      "reason": null,
+      "review_status": "pending_review"
+    },
     "is_license_candidate": true
   },
   "multi_person": {
@@ -89,7 +238,7 @@ AI 输出 JSON：
 - MVP 阶段不要求一个人员同时拥有多个正式类别。
 
 ---
-## 20. AI Prompt 需求
+## 21. AI Prompt 需求
 
 ### 20.1 OCR 后结构化抽取 Prompt
 
@@ -102,7 +251,7 @@ AI 输出 JSON：
 - 必须给出 confidence。
 - 必须给出 needs_manual_review。
 - 必须给出 evidence。
-- 必须识别主类别、候选类别、地区、人员、资料类型、学历、证书、多人员迹象。
+- 必须识别主类别、候选类别、地区、人员、资料类型、学历、证书、颁发机构、多人员迹象，并综合路径语义解析结果。
 
 类别字段输出要求：
 
@@ -123,6 +272,28 @@ AI 输出 JSON：
 - `primary_value` 用于归档主类别。
 - `candidate_values` 用于记录 AI 判断出的候选类别。
 - 如果候选类别冲突或置信度接近，需要进入待确认。
+
+证书颁发机构权威性字段输出要求，P2 预留：
+
+```json
+{
+  "issuer_authority": {
+    "level": "high | medium | low | unknown",
+    "score": 0,
+    "source": "manual | ai | rule | unknown",
+    "reason": "判断依据",
+    "review_status": "confirmed | pending_review | rejected"
+  }
+}
+```
+
+说明：
+
+- MVP 阶段可默认输出 `unknown`。
+- 如果 AI 能从文本中明显识别发证机关权威性，可以给出建议。
+- AI 建议不能直接作为最终业务裁决。
+- 人工确认结果优先。
+
 
 ### 20.2 查询解析 Prompt
 
@@ -170,7 +341,7 @@ AI 输出 JSON：
 - 标记需要用户确认。
 
 ---
-## 21. 隐私与安全
+## 22. 隐私与安全
 
 ### 21.1 原图不上传
 
@@ -191,6 +362,7 @@ AI 输出 JSON：
 身份证号：仅保留后四位
 手机号：替换为 [手机号]
 证书编号：按需保留或替换
+颁发机构：一般可以保留，用于判断证书权威性
 姓名：按业务需要决定是否保留
 ```
 
