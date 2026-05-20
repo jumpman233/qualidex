@@ -228,6 +228,62 @@ interface MergePeopleResult {
   auditLogId: string
 }
 
+interface QueryPeopleConditions {
+  categories?: string[]
+  region?: string | null
+  educationMin?: string | null
+  licenseQuery?: string | null
+  includePendingReview?: boolean
+  limit?: number
+}
+
+interface QueryPersonResult {
+  personId: string
+  name: string | null
+  idCardLast4: string | null
+  primaryCategory: string | null
+  region: string | null
+  educationLevel: string | null
+  licenseNames: string[]
+  documentCount: number
+  matchReason: string
+}
+
+interface QueryResultsExcelExportResult {
+  exportJobId: string
+  outputPath: string
+  rowCount: number
+}
+
+interface QueryFilesExportResult {
+  exportJobId: string
+  outputRoot: string
+  selectedPeople: string[]
+  totalItems: number
+  copiedItems: number
+  skippedExistingItems: number
+  failedItems: number
+}
+
+interface DeletedItemSummary {
+  id: string
+  itemType: 'person' | 'file'
+  name: string | null
+  deletedAt: string | null
+  deletedReason: string | null
+}
+
+interface RecycleActionResult {
+  auditLogId: string
+}
+
+interface ArchiveOutputCleanupResult {
+  outputRoot: string
+  removedEntries: number
+  failedEntries: number
+  auditLogId: string
+}
+
 interface Window {
   qualidex: {
     getAppInfo(): Promise<AppInfo>
@@ -249,6 +305,15 @@ interface Window {
     reassignReviewPerson(reviewItemId: string, personId: string): Promise<ReviewItemActionResult>
     createPersonFromReview(reviewItemId: string, input: CreatePersonFromReviewInput): Promise<ReviewItemActionResult>
     mergePeople(input: MergePeopleInput): Promise<MergePeopleResult>
+    queryPeople(conditions: QueryPeopleConditions): Promise<QueryPersonResult[]>
+    exportQueryResultsExcel(conditions: QueryPeopleConditions): Promise<QueryResultsExcelExportResult | null>
+    exportQueryResultFiles(conditions: QueryPeopleConditions): Promise<QueryFilesExportResult | null>
+    listDeletedItems(limit?: number): Promise<DeletedItemSummary[]>
+    softDeletePerson(personId: string, reason?: string): Promise<RecycleActionResult>
+    restorePerson(personId: string): Promise<RecycleActionResult>
+    softDeleteFile(fileId: string, reason?: string): Promise<RecycleActionResult>
+    restoreFile(fileId: string): Promise<RecycleActionResult>
+    cleanupArchiveOutput(outputRoot: string): Promise<ArchiveOutputCleanupResult>
     exportRecognitionReviewExcel(): Promise<RecognitionReviewExportResult | null>
   }
 }

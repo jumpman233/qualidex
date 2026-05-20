@@ -64,16 +64,16 @@ async function verifyTxt(extractTextFromFile) {
 }
 
 async function verifyPdf(extractTextFromFile) {
-  const pdfPath = findFirstFixture(['.pdf'])
-  if (!pdfPath) {
-    console.log('verify:text-extract pdf skipped: private PDF fixture not found')
-    return
-  }
+  const pdfPath = findFirstFixture(['.pdf']) ?? (await createMinimalPdfFile())
 
   const result = await extractTextFromFile(pdfPath, '.pdf')
   assert(
     result.status === 'text_extracted' || result.status === 'pending_ocr' || result.status === 'failed',
     `unexpected pdf extraction status: ${result.status}`,
+  )
+  assert(
+    !String(result.error ?? '').includes('DOMMatrix'),
+    `pdf extraction should not fail because DOMMatrix is missing: ${result.error}`,
   )
   console.log(`pdf: ${result.status}, length=${result.text.length}`)
 }
@@ -99,6 +99,44 @@ function findFirstFixture(extensions) {
   const entries = Array.from(readdirSync(privateFixtureRoot))
   const match = entries.find((entry) => extensions.includes(path.extname(entry).toLowerCase()))
   return match ? path.join(privateFixtureRoot, match) : null
+}
+
+async function createMinimalPdfFile() {
+  const pdfPath = path.join(tempRoot, 'minimal.pdf')
+  const pdf = `%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 144] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+5 0 obj
+<< /Length 44 >>
+stream
+BT /F1 24 Tf 72 72 Td (Qualidex OCR) Tj ET
+endstream
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000000311 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+405
+%%EOF`
+  await writeFile(pdfPath, pdf, 'utf8')
+  return pdfPath
 }
 
 function pathToFileUrl(filePath) {

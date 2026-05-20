@@ -58,6 +58,33 @@ contextBridge.exposeInMainWorld('qualidex', {
   mergePeople(input: unknown) {
     return ipcRenderer.invoke('people:merge', input)
   },
+  queryPeople(conditions: unknown) {
+    return ipcRenderer.invoke('query:people', conditions)
+  },
+  exportQueryResultsExcel(conditions: unknown) {
+    return ipcRenderer.invoke('export:query-results-excel', conditions)
+  },
+  exportQueryResultFiles(conditions: unknown) {
+    return ipcRenderer.invoke('export:query-result-files', conditions)
+  },
+  listDeletedItems(limit?: number) {
+    return ipcRenderer.invoke('recycle:list', limit)
+  },
+  softDeletePerson(personId: string, reason?: string) {
+    return ipcRenderer.invoke('recycle:soft-delete-person', personId, reason)
+  },
+  restorePerson(personId: string) {
+    return ipcRenderer.invoke('recycle:restore-person', personId)
+  },
+  softDeleteFile(fileId: string, reason?: string) {
+    return ipcRenderer.invoke('recycle:soft-delete-file', fileId, reason)
+  },
+  restoreFile(fileId: string) {
+    return ipcRenderer.invoke('recycle:restore-file', fileId)
+  },
+  cleanupArchiveOutput(outputRoot: string) {
+    return ipcRenderer.invoke('archive:cleanup-output', outputRoot)
+  },
   exportRecognitionReviewExcel() {
     return ipcRenderer.invoke('export:recognition-review-excel')
   },

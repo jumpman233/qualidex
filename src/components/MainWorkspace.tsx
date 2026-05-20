@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react'
 import {
   exportItems,
   personResults,
-  queryConditions,
   type WorkspaceMode,
 } from '../mock/qualidexMock'
 
@@ -60,79 +59,166 @@ function HomeWorkspace({ onModeChange }: { onModeChange(mode: WorkspaceMode): vo
 }
 
 function SearchWorkspace() {
-  const [confirmed, setConfirmed] = useState(false)
+  const [categories, setCategories] = useState<string[]>(['工程'])
+  const [region, setRegion] = useState('')
+  const [educationMin, setEducationMin] = useState('')
+  const [licenseQuery, setLicenseQuery] = useState('')
+  const [includePendingReview, setIncludePendingReview] = useState(false)
+  const [results, setResults] = useState<QueryPersonResult[]>([])
+  const [isSearching, setIsSearching] = useState(false)
+  const [searchError, setSearchError] = useState<string | null>(null)
+  const [exportMessage, setExportMessage] = useState<string | null>(null)
+
+  const conditions: QueryPeopleConditions = {
+    categories,
+    region,
+    educationMin,
+    licenseQuery,
+    includePendingReview,
+    limit: 100,
+  }
+
+  function toggleCategory(category: string) {
+    setCategories((current) => current.includes(category)
+      ? current.filter((item) => item !== category)
+      : [...current, category])
+  }
+
+  async function handleSearch() {
+    setIsSearching(true)
+    setSearchError(null)
+    setExportMessage(null)
+
+    try {
+      setResults(await window.qualidex.queryPeople(conditions))
+    } catch (error) {
+      setResults([])
+      setSearchError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setIsSearching(false)
+    }
+  }
+
+  async function handleExportExcel() {
+    setExportMessage(null)
+    const result = await window.qualidex.exportQueryResultsExcel(conditions)
+    if (result) {
+      setExportMessage('已导出 ' + result.rowCount + ' 条查询结果。')
+    }
+  }
+
+  async function handleExportFiles() {
+    setExportMessage(null)
+    const result = await window.qualidex.exportQueryResultFiles(conditions)
+    if (result) {
+      setExportMessage('已复制 ' + result.copiedItems + ' 份资料，跳过 ' + result.skippedExistingItems + ' 份，失败 ' + result.failedItems + ' 份。')
+    }
+  }
 
   return (
     <section className="workspace-stack">
       <article className="workspace-panel">
         <div className="section-heading">
-          <h2>A. 系统理解的查询条件</h2>
-          <p>请先确认系统理解是否正确，确认后再查询人员。</p>
+          <h2>查询条件</h2>
+          <p>查询只基于数据库中的结构化数据；默认不包含待确认资料。</p>
         </div>
-        <div className="condition-grid">
-          {queryConditions.map((condition) => (
-            <div key={condition.label}>
-              <span>{condition.label}</span>
-              <strong>{condition.value}</strong>
+        <div className="query-form-grid">
+          <label>
+            <span>类别</span>
+            <div className="tag-row">
+              {['工程', '消防员', '其他'].map((category) => (
+                <button
+                  key={category}
+                  type="button"
+                  className={'tag-toggle ' + (categories.includes(category) ? 'selected' : '')}
+                  onClick={() => toggleCategory(category)}
+                >
+                  {category}
+                </button>
+              ))}
             </div>
-          ))}
+          </label>
+          <label>
+            <span>地区</span>
+            <input value={region} onChange={(event) => setRegion(event.target.value)} placeholder="例如 成都" />
+          </label>
+          <label>
+            <span>学历不低于</span>
+            <select value={educationMin} onChange={(event) => setEducationMin(event.target.value)}>
+              <option value="">不限</option>
+              <option value="college">大专</option>
+              <option value="bachelor">本科</option>
+              <option value="master">硕士</option>
+              <option value="doctor">博士</option>
+            </select>
+          </label>
+          <label>
+            <span>证书</span>
+            <input value={licenseQuery} onChange={(event) => setLicenseQuery(event.target.value)} placeholder="例如 二级建造师" />
+          </label>
+          <label className="checkbox-field">
+            <input
+              type="checkbox"
+              checked={includePendingReview}
+              onChange={(event) => setIncludePendingReview(event.target.checked)}
+            />
+            <span>包含待确认资料</span>
+          </label>
         </div>
         <div className="workspace-actions">
-          <button type="button" className="primary-button" onClick={() => setConfirmed(true)}>确认查询</button>
-          <button type="button" className="ghost-button" onClick={() => setConfirmed(false)}>修改条件</button>
+          <button type="button" className="primary-button" onClick={() => void handleSearch()} disabled={isSearching}>
+            {isSearching ? '查询中' : '确认查询'}
+          </button>
         </div>
+        {searchError ? <div className="risk-note">{searchError}</div> : null}
       </article>
-      {confirmed ? (
-        <article className="workspace-panel">
-          <div className="section-heading inline-heading">
-            <h2>B. 查询结果</h2>
-            <p>已找到 5 人，强匹配 2 人，可能相关 1 人。</p>
-            <div className="result-actions">
-              <button type="button" className="ghost-button">
-                <Folder size={18} />
-                复制文件夹
-              </button>
-              <button type="button" className="primary-button">
-                <Download size={18} />
-                导出选中
-              </button>
-            </div>
+
+      <article className="workspace-panel">
+        <div className="section-heading inline-heading">
+          <div>
+            <h2>查询结果</h2>
+            <p>已找到 {results.length} 人。导出会重新按当前条件查询并记录导出任务。</p>
           </div>
+          <div className="result-actions">
+            <button type="button" className="ghost-button" onClick={() => void handleExportFiles()}>
+              <Folder size={18} />
+              导出资料
+            </button>
+            <button type="button" className="primary-button" onClick={() => void handleExportExcel()}>
+              <Download size={18} />
+              导出 Excel
+            </button>
+          </div>
+        </div>
+        {exportMessage ? <div className="risk-note">{exportMessage}</div> : null}
+        {results.length > 0 ? (
           <div className="person-list">
-            {personResults.map((person) => (
-              <article key={person.id} className="person-row">
-                <input type="checkbox" aria-label={`选择 ${person.name}`} />
-                <div className={`avatar avatar-${person.id}`} />
+            {results.map((person) => (
+              <article key={person.personId} className="person-row">
+                <input type="checkbox" aria-label={'选择 ' + (person.name ?? '未知人员')} defaultChecked />
+                <div className="avatar avatar-person-1" />
                 <div className="person-main">
                   <div>
-                    <h3>{person.name}</h3>
+                    <h3>{person.name ?? '未知人员'}</h3>
                     <div className="tag-row">
-                      {person.tags.map((tag) => (
-                        <span key={tag.label} className={`tag ${tag.tone}`}>{tag.label}</span>
-                      ))}
+                      <span className="tag green">{person.primaryCategory ?? '未识别类别'}</span>
+                      <span className="tag blue">{person.region ?? '未划分区域'}</span>
+                      {person.educationLevel ? <span className="tag gray">{person.educationLevel}</span> : null}
                     </div>
                   </div>
-                  <p>{person.summary}</p>
-                  <span>{person.reason}</span>
+                  <p>{person.licenseNames.length > 0 ? person.licenseNames.join('、') : '暂无证书记录'}</p>
+                  <span>{person.matchReason}；资料 {person.documentCount} 份</span>
                 </div>
-                <button type="button" className="ghost-button">
-                  <Eye size={18} />
-                  查看
-                </button>
-                <button type="button" className="ghost-button">
-                  <Folder size={18} />
-                  文件夹
-                </button>
               </article>
             ))}
           </div>
-        </article>
-      ) : (
-        <article className="workspace-panel pending-result">
-          <h2>B. 查询结果</h2>
-          <p>请先确认上方查询条件。确认后再展示人员结果，避免系统误解查询意图。</p>
-        </article>
-      )}
+        ) : (
+          <div className="pending-result">
+            <h2>暂无查询结果</h2>
+            <p>设置条件后点击确认查询，结果会在这里展示。</p>
+          </div>
+        )}
+      </article>
     </section>
   )
 }

@@ -133,12 +133,14 @@ app.whenReady().then(async () => {
       const duplicateCount = db
         .prepare("select count(*) as count from files where process_status = 'duplicate'")
         .get().count;
+      const taskCount = db.prepare('select count(*) as count from processing_tasks').get().count;
       const aiResultCount = db.prepare('select count(*) as count from ai_extract_results').get().count;
       const reviewItemCount = db.prepare('select count(*) as count from review_items').get().count;
 
       assertEqual(batchCount, 2, 'import batch rows');
-      assertEqual(fileCount, 6, 'file rows');
-      assertEqual(duplicateCount, 4, 'duplicate file rows');
+      assertEqual(fileCount, 2, 'file rows only include new unique files');
+      assertEqual(duplicateCount, 0, 'duplicate files are not persisted');
+      assertEqual(taskCount, 2, 'processing tasks are only created for new unique files');
       assertEqual(aiResultCount, 0, 'AI result rows without config');
       assertEqual(reviewItemCount, 0, 'review item rows without config');
 

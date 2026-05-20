@@ -66,6 +66,7 @@ Qualidex 是一个 Windows 本地桌面应用，用于人员资料归档与资�
 - UI 设计：`docs/prd/07-ui-design.md`
 - MVP 与路线图：`docs/prd/08-mvp-roadmap.md`
 - 开发补充细则：`docs/development-rules.md`
+- Node 脚本与 SQLite 运行时规则：`docs/node-sqlite-runtime-rules.md`
 
 ## 什么时候读哪个文档
 
@@ -76,6 +77,7 @@ Qualidex 是一个 Windows 本地桌面应用，用于人员资料归档与资�
 - 修改迁移、SQLite 表、SQL 查询、repository 或数据服务时，读 `docs/prd/06-data-model.md`。
 - 修改 React UI、交互、命令输入或布局时，读 `docs/prd/07-ui-design.md`。
 - 修改测试策略、验证方式、E2E 预留或开发流程时，读 `docs/development-rules.md`。
+- 编写或修改 Node.js 脚本、数据库清理脚本、SQLite 查看脚本、涉及 `better-sqlite3` / `node:sqlite` / Electron native binding 的工具时，读 `docs/node-sqlite-runtime-rules.md`。
 
 ## 架构规则
 
@@ -88,6 +90,8 @@ Qualidex 是一个 Windows 本地桌面应用，用于人员资料归档与资�
 - IPC payload 和 service 返回值优先使用显式类型。
 - 实现 UI 页面时可以先用 mock data。
 - 没有明确理由不要引入大型依赖。
+- Electron Main Process 中访问业务 SQLite 使用 `better-sqlite3`。
+- 普通 Node.js 开发脚本不要直接加载 Electron runtime 编译的 `better-sqlite3`；需要读写开发库时按 `docs/node-sqlite-runtime-rules.md` 使用 `node:sqlite` 或其他非 Electron native binding 方案。
 
 ## 建议源码结构
 

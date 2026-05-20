@@ -201,8 +201,10 @@ app.whenReady().then(async () => {
       const duplicateCount = db
         .prepare("select count(*) as count from files where process_status = 'duplicate'")
         .get().count;
-      assertEqual(fileCount, 10, 'file rows');
-      assertEqual(duplicateCount, 7, 'duplicate file rows');
+      const taskCount = db.prepare('select count(*) as count from processing_tasks').get().count;
+      assertEqual(fileCount, 3, 'file rows only include new unique files');
+      assertEqual(duplicateCount, 0, 'duplicate files are not persisted');
+      assertEqual(taskCount, 3, 'processing tasks are only created for new unique files');
 
       assert(require('node:fs').existsSync(${JSON.stringify(path.join(fullImportRoot, 'alpha.txt'))}), 'original full import file remains');
       assert(require('node:fs').existsSync(${JSON.stringify(path.join(addFolderRoot, '新增', 'gamma.txt'))}), 'original add-folder file remains');

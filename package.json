@@ -10,6 +10,7 @@
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
     "rebuild:native": "electron-rebuild -f -w better-sqlite3",
+    "cleanup:import-pollution": "node --no-warnings=ExperimentalWarning scripts/cleanup-import-pollution.mjs",
     "verify:scan": "node scripts/verify-scan.mjs",
     "verify:hash": "node scripts/verify-hash.mjs",
     "verify:text-extract": "node scripts/verify-text-extract.mjs",
@@ -29,6 +30,8 @@
     "verify:review-create-person": "node scripts/verify-review-create-person.mjs",
     "verify:review-person-reassign": "node scripts/verify-review-person-reassign.mjs",
     "verify:people-merge": "node scripts/verify-people-merge.mjs",
+    "verify:query-export-recycle": "node scripts/verify-query-export-recycle.mjs",
+    "verify:p1": "pnpm run verify:import-batches && pnpm run verify:processing-worker && pnpm run verify:processing-worker-ai-success && pnpm run verify:structured-recognition && pnpm run verify:archive-preview && pnpm run verify:archive-write && pnpm run verify:review-list && pnpm run verify:review-actions && pnpm run verify:review-field-update && pnpm run verify:review-license-update && pnpm run verify:review-person-reassign && pnpm run verify:review-create-person && pnpm run verify:people-merge && pnpm run verify:query-export-recycle && pnpm run lint && pnpm run build",
     "verify:db": "pnpm run rebuild:native && node scripts/verify-db.mjs"
   },
   "dependencies": {

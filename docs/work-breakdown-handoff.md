@@ -359,10 +359,34 @@ pnpm run build
 
 ### 后续步骤
 
-1. 查询页真实条件确认与 SQL 查询。
-2. 完整导出：查询结果 Excel + 人员资料文件夹。
-3. 回收站、软删除恢复、归档输出清理。
-4. 单测与 E2E 补齐。
+1. P1-G 查询页真实条件确认与 SQL 查询已完成。
+   - 真实条件输入：类别多选、地区、学历、证书、是否包含待确认。
+   - SQL 查询基于 `people / licenses / person_documents / files` 中已确认或允许待确认的数据。
+   - 查询结果展示人员、类别、地区、学历、证书和资料数量。
+2. P1-H 完整导出已完成。
+   - 查询结果 Excel。
+   - 查询命中人员的资料文件夹导出，只复制到用户选择的输出目录，不覆盖已有文件。
+   - 写入 `export_jobs`。
+3. P1-I 回收站 / 软删除恢复 / 归档输出清理已完成。
+   - 人员和文件软删除。
+   - 软删除恢复。
+   - 清理归档输出副本，不触碰原始资料。
+4. P1-J 可见中文文案清理已完成。
+   - 首页和查询页已清理历史乱码/编码污染文案。
+   - 后续仍可继续巡检低频页面与历史注释，但主流程可见文案已恢复中文。
+5. P1-K 回归验证入口已完成。
+   - 新增 `pnpm run verify:p1`，串联 P1 主链路验证、lint 和 build。
+   - 不包含会触发 native rebuild 的 `verify:db`。
+6. 后续建议：补真正的单测与 Electron E2E。
+
+新增验证：
+
+```powershell
+pnpm run verify:query-export-recycle
+pnpm run verify:p1
+pnpm run lint
+pnpm run build
+```
 
 ## 当前验证注意事项
 
@@ -392,5 +416,5 @@ pnpm exec prebuild-install --runtime=electron --target=30.0.1 --dist-url=https:/
 可以直接说：
 
 ```text
-继续 Qualidex，先读 AGENTS.md 和 docs/work-breakdown-handoff.md。P1-E / P1-F 已完成，请从查询页真实条件确认与 SQL 查询开始拆分；执行前按老规则说明步骤并确认。
+继续 Qualidex，先读 AGENTS.md 和 docs/work-breakdown-handoff.md。P1-G / P1-H / P1-I 已完成，请从历史乱码 UI 文案清理、单测与 E2E 或下一阶段功能开始拆分。
 ```

@@ -268,12 +268,24 @@ export async function importDirectory(
       const existingHash = findExistingHash.get(sha256) as ExistingHashRow | undefined
       const importStatus = existingHash ? 'duplicate' : 'new'
       const parentFolder = path.dirname(file.relativePath)
-      const ocrStatus = existingHash ? 'duplicate' : 'pending'
-      const processStatus = existingHash ? 'duplicate' : 'pending_ocr'
-      const aiStatus = existingHash ? 'duplicate' : 'pending'
 
       if (existingHash) {
         duplicateFiles += 1
+        if (importedFiles.length < PREVIEW_LIMIT) {
+          importedFiles.push({
+            ...file,
+            id: existingHash.id,
+            sha256,
+            importStatus,
+            processStatus: 'duplicate',
+            processError: null,
+            ocrStatus: 'duplicate',
+            ocrTextPreview: '',
+            aiStatus: 'duplicate',
+          })
+        }
+
+        continue
       } else {
         newFiles += 1
       }
@@ -293,8 +305,8 @@ export async function importDirectory(
         pathParseResult: null,
         pathConfidence: null,
         ocrText: null,
-        ocrStatus,
-        processStatus,
+        ocrStatus: 'pending',
+        processStatus: 'pending_ocr',
         processError: null,
         archiveStatus: 'pending',
         createdAt: now,
@@ -305,19 +317,8 @@ export async function importDirectory(
         taskType: 'ocr',
         fileId,
         batchId,
-        status: existingHash ? 'skipped' : 'pending',
-        resultSummary: existingHash ? 'duplicate_file' : null,
+        status: 'pending',
       })
-
-      if (existingHash) {
-        createProcessingTask(db, {
-          taskType: 'ai_extract',
-          fileId,
-          batchId,
-          status: 'skipped',
-          resultSummary: 'duplicate_file',
-        })
-      }
 
       if (importedFiles.length < PREVIEW_LIMIT) {
         importedFiles.push({
@@ -325,11 +326,11 @@ export async function importDirectory(
           id: fileId,
           sha256,
           importStatus,
-          processStatus,
+          processStatus: 'pending_ocr',
           processError: null,
-          ocrStatus,
+          ocrStatus: 'pending',
           ocrTextPreview: '',
-          aiStatus,
+          aiStatus: 'pending',
         })
       }
     } catch (error) {
@@ -339,45 +340,6 @@ export async function importDirectory(
       errors.push({
         path: file.path,
         message,
-      })
-
-      insertFile.run({
-        id: fileId,
-        originalPath: file.path,
-        fileName: file.name,
-        ext: file.ext,
-        sizeBytes: file.sizeBytes,
-        sha256: null,
-        sourceBatchId: batchId,
-        sourceRootPath: scanResult.rootPath,
-        relativePath: file.relativePath,
-        parentFolder: path.dirname(file.relativePath),
-        pathSegments: JSON.stringify(getPathSegments(file.relativePath)),
-        pathParseResult: null,
-        pathConfidence: null,
-        ocrText: null,
-        ocrStatus: 'failed',
-        processStatus: 'failed',
-        processError: message,
-        archiveStatus: 'pending',
-        createdAt: now,
-        updatedAt: now,
-      })
-
-      createProcessingTask(db, {
-        taskType: 'ocr',
-        fileId,
-        batchId,
-        status: 'failed',
-        error: message,
-      })
-
-      createProcessingTask(db, {
-        taskType: 'ai_extract',
-        fileId,
-        batchId,
-        status: 'skipped',
-        resultSummary: 'ocr_failed',
       })
 
       if (importedFiles.length < PREVIEW_LIMIT) {

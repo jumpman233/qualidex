@@ -20,16 +20,19 @@
 - P1-E-6 待确认证书字段编辑已完成：支持修改证书名称、证书认可状态，写入 `licenses`，记录 `audit_logs`，并标记关联人员 `archive_dirty`。
 - P1-E-7 待确认新建人员已完成：支持从待确认项新建人员，并把当前文件的资料关联和证书关联绑定到新人员；保留原始资料只读规则。
 - P1-F 人员合并 / 拆分工作流已完成：支持把待确认文件切换到已有人员、拆分为新建人员、合并两个已有人员；合并会转移资料和证书关联，源人员软删除为 `merged`，并写入 `audit_logs`。
+- P1-G 查询页真实条件确认与 SQL 查询已完成：支持类别多选、地区、学历、证书、是否包含待确认，查询基于 `people / licenses / person_documents / files` 的 SQL 结果。
+- P1-H 完整导出已完成：支持查询结果 Excel、查询命中人员资料文件夹导出，并记录 `export_jobs`；资料导出只复制到用户选择的输出目录且不覆盖已有文件。
+- P1-I 回收站 / 软删除恢复 / 归档输出清理已完成：支持人员和文件软删除、恢复，以及清理归档输出副本；原始资料不移动、不删除。
+- P1-J 可见中文文案清理已完成：修复首页和查询页的历史乱码/编码污染文案，保证当前主流程展示为中文。
+- P1-K 回归验证入口已完成：新增 `pnpm run verify:p1` 串联 P1 主链路验证、lint 和 build；不包含会触发 native rebuild 的 `verify:db`。
 
 ### 进行中
 
-- 暂无。P1-E 当前拆分项已完成。
+- 暂无。
 
 ### 暂缓 / 未开始
 
-- 查询页真实条件解析、SQL 查询、证书候选确认。
-- 完整导出：查询结果 Excel、人员资料文件夹导出、export_jobs。
-- 回收站、软删除恢复、归档输出清理。
+- 证书候选确认的更高级交互。
 - 单测与 E2E；当前已为未来验证脚本和主链路留出空间。
 
 ### 当前验证情况
@@ -47,6 +50,8 @@
 - 已通过：`pnpm run verify:review-person-reassign`
 - 已通过：`pnpm run verify:review-create-person`
 - 已通过：`pnpm run verify:people-merge`
+- 已通过：`pnpm run verify:query-export-recycle`
+- 已通过：`pnpm run verify:p1`
 - 已通过：`pnpm run lint`
 - 已通过：`pnpm run build`
 - 暂不建议运行：`pnpm run verify:db`。该脚本会触发 `electron-rebuild`，在当前机器缺少 Visual Studio C++ 构建环境时可能破坏 `better-sqlite3` 的 Electron native binding。

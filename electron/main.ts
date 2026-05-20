@@ -10,7 +10,20 @@ import {
   rescanDirectory,
   rescanImportBatch,
 } from './services/importService'
-import { exportRecognitionReviewExcel } from './services/exportService'
+import {
+  exportQueryResultFiles,
+  exportQueryResultsExcel,
+  exportRecognitionReviewExcel,
+} from './services/exportService'
+import { queryPeople, type QueryPeopleConditions } from './services/queryService'
+import {
+  cleanupArchiveOutput,
+  listDeletedItems,
+  restoreFile,
+  restorePerson,
+  softDeleteFile,
+  softDeletePerson,
+} from './services/recycleService'
 import {
   listProcessingTasks,
   type ProcessingTaskStatus,
@@ -182,6 +195,72 @@ ipcMain.handle('review:create-person', async (_event, reviewItemId: string, inpu
 
 ipcMain.handle('people:merge', async (_event, input: MergePeopleInput) => {
   return mergePeople(getDatabase(), input)
+})
+
+ipcMain.handle('query:people', async (_event, conditions?: QueryPeopleConditions) => {
+  return queryPeople(getDatabase(), conditions)
+})
+
+ipcMain.handle('export:query-results-excel', async (_event, conditions?: QueryPeopleConditions) => {
+  const result = win
+    ? await dialog.showSaveDialog(win, {
+        title: '导出查询结果',
+        defaultPath: `查询结果-${formatDateForFileName(new Date())}.xlsx`,
+        filters: [{ name: 'Excel 工作簿', extensions: ['xlsx'] }],
+      })
+    : await dialog.showSaveDialog({
+        title: '导出查询结果',
+        defaultPath: `查询结果-${formatDateForFileName(new Date())}.xlsx`,
+        filters: [{ name: 'Excel 工作簿', extensions: ['xlsx'] }],
+      })
+
+  if (result.canceled || !result.filePath) {
+    return null
+  }
+
+  return exportQueryResultsExcel(getDatabase(), conditions ?? {}, result.filePath)
+})
+
+ipcMain.handle('export:query-result-files', async (_event, conditions?: QueryPeopleConditions) => {
+  const result = win
+    ? await dialog.showOpenDialog(win, {
+        title: '选择查询资料导出目录',
+        properties: ['openDirectory', 'createDirectory'],
+      })
+    : await dialog.showOpenDialog({
+        title: '选择查询资料导出目录',
+        properties: ['openDirectory', 'createDirectory'],
+      })
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return null
+  }
+
+  return exportQueryResultFiles(getDatabase(), conditions ?? {}, result.filePaths[0])
+})
+
+ipcMain.handle('recycle:list', async (_event, limit?: number) => {
+  return listDeletedItems(getDatabase(), limit)
+})
+
+ipcMain.handle('recycle:soft-delete-person', async (_event, personId: string, reason?: string) => {
+  return softDeletePerson(getDatabase(), personId, reason)
+})
+
+ipcMain.handle('recycle:restore-person', async (_event, personId: string) => {
+  return restorePerson(getDatabase(), personId)
+})
+
+ipcMain.handle('recycle:soft-delete-file', async (_event, fileId: string, reason?: string) => {
+  return softDeleteFile(getDatabase(), fileId, reason)
+})
+
+ipcMain.handle('recycle:restore-file', async (_event, fileId: string) => {
+  return restoreFile(getDatabase(), fileId)
+})
+
+ipcMain.handle('archive:cleanup-output', async (_event, outputRoot: string) => {
+  return cleanupArchiveOutput(getDatabase(), outputRoot)
 })
 
 ipcMain.handle('export:recognition-review-excel', async () => {

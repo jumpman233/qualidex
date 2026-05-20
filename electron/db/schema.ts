@@ -186,6 +186,28 @@ export function initializeSchema(db: Database.Database): void {
       created_at TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS export_jobs (
+      id TEXT PRIMARY KEY,
+      query_text TEXT,
+      parsed_conditions TEXT,
+      selected_people TEXT,
+      output_type TEXT,
+      output_path TEXT,
+      status TEXT,
+      created_at TEXT,
+      updated_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS license_match_logs (
+      id TEXT PRIMARY KEY,
+      user_query TEXT,
+      parsed_license_query TEXT,
+      candidate_licenses TEXT,
+      ai_grouping_result TEXT,
+      user_confirmed_license_names TEXT,
+      created_at TEXT
+    );
+
     CREATE INDEX IF NOT EXISTS idx_people_name ON people(name);
     CREATE INDEX IF NOT EXISTS idx_person_documents_file_id ON person_documents(file_id);
     CREATE INDEX IF NOT EXISTS idx_licenses_file_id ON licenses(file_id);
@@ -195,6 +217,7 @@ export function initializeSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_processing_tasks_file_id ON processing_tasks(file_id);
     CREATE INDEX IF NOT EXISTS idx_processing_tasks_batch_id ON processing_tasks(batch_id);
     CREATE INDEX IF NOT EXISTS idx_processing_tasks_type_status ON processing_tasks(task_type, status);
+    CREATE INDEX IF NOT EXISTS idx_export_jobs_created_at ON export_jobs(created_at);
   `)
 
   ensureColumn(db, 'files', 'relative_path', 'TEXT')

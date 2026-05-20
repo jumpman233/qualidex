@@ -46,3 +46,9 @@
 - UI / IPC 变更至少运行 `pnpm run lint` 和 `pnpm run build`。
 - 涉及桌面启动链路时，短暂运行 `pnpm run dev` 验证 Electron 能启动。
 - 验证命令应写入 `package.json` scripts，避免只存在于对话记录。
+
+## 7. Node 脚本与数据库工具
+
+- 编写普通 Node.js 脚本访问 SQLite 前，先读 `docs/node-sqlite-runtime-rules.md`。
+- 应用侧可以使用 Electron runtime 编译的 `better-sqlite3`；普通 Node.js 脚本不要直接加载它。
+- 开发期数据库查看、清理和一次性修复脚本优先使用 `node:sqlite`，并在脚本说明中标注 Node 22+ 要求。

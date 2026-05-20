@@ -507,6 +507,62 @@ button:disabled {
   font-size: 1.05rem;
 }
 
+.query-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.query-form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.query-form-grid label > span,
+.checkbox-field span {
+  color: #667085;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.query-form-grid input,
+.query-form-grid select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #101828;
+  background: #ffffff;
+}
+
+.tag-toggle {
+  border: 1px solid #d0d5dd;
+  border-radius: 999px;
+  padding: 7px 11px;
+  color: #344054;
+  background: #ffffff;
+  font-weight: 800;
+}
+
+.tag-toggle.selected {
+  border-color: #2563eb;
+  color: #1d4ed8;
+  background: #eff6ff;
+}
+
+.checkbox-field {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 10px !important;
+}
+
+.checkbox-field input {
+  width: auto;
+}
+
 .workspace-actions {
   margin-top: 14px;
 }
