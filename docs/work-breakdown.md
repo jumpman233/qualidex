@@ -19,6 +19,7 @@
 - P1-E-5 待确认人员切换已完成：支持列出已有人员候选，并把待确认文件关联到已有人员；同步更新资料关联和证书人员，写入 `audit_logs`，标记新旧人员 `archive_dirty`。
 - P1-E-6 待确认证书字段编辑已完成：支持修改证书名称、证书认可状态，写入 `licenses`，记录 `audit_logs`，并标记关联人员 `archive_dirty`。
 - P1-E-7 待确认新建人员已完成：支持从待确认项新建人员，并把当前文件的资料关联和证书关联绑定到新人员；保留原始资料只读规则。
+- P1-F 人员合并 / 拆分工作流已完成：支持把待确认文件切换到已有人员、拆分为新建人员、合并两个已有人员；合并会转移资料和证书关联，源人员软删除为 `merged`，并写入 `audit_logs`。
 
 ### 进行中
 
@@ -26,7 +27,6 @@
 
 ### 暂缓 / 未开始
 
-- 人员合并 / 拆分的交互与落库。
 - 查询页真实条件解析、SQL 查询、证书候选确认。
 - 完整导出：查询结果 Excel、人员资料文件夹导出、export_jobs。
 - 回收站、软删除恢复、归档输出清理。
@@ -46,6 +46,7 @@
 - 已通过：`pnpm run verify:review-license-update`
 - 已通过：`pnpm run verify:review-person-reassign`
 - 已通过：`pnpm run verify:review-create-person`
+- 已通过：`pnpm run verify:people-merge`
 - 已通过：`pnpm run lint`
 - 已通过：`pnpm run build`
 - 暂不建议运行：`pnpm run verify:db`。该脚本会触发 `electron-rebuild`，在当前机器缺少 Visual Studio C++ 构建环境时可能破坏 `better-sqlite3` 的 Electron native binding。

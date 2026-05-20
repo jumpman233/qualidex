@@ -415,6 +415,9 @@ function ReviewWorkspace() {
   const [personCandidates, setPersonCandidates] = useState<PersonCandidateSummary[]>([])
   const [personDrafts, setPersonDrafts] = useState<Record<string, string>>({})
   const [newPersonDrafts, setNewPersonDrafts] = useState<Record<string, NewPersonDraft>>({})
+  const [mergeTargetPersonId, setMergeTargetPersonId] = useState('')
+  const [mergeSourcePersonId, setMergeSourcePersonId] = useState('')
+  const [mergeResult, setMergeResult] = useState<MergePeopleResult | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [activeReviewItemId, setActiveReviewItemId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -577,6 +580,33 @@ function ReviewWorkspace() {
     }
   }
 
+  async function handleMergePeople() {
+    if (!mergeTargetPersonId || !mergeSourcePersonId) {
+      setError('请先选择保留人员和要合并的人员。')
+      return
+    }
+
+    setActiveReviewItemId('people-merge')
+    setError(null)
+    setMergeResult(null)
+
+    try {
+      const result = await window.qualidex.mergePeople({
+        targetPersonId: mergeTargetPersonId,
+        sourcePersonIds: [mergeSourcePersonId],
+        reason: '待确认工作台手动合并',
+      })
+      setMergeResult(result)
+      setMergeSourcePersonId('')
+      await loadReviewItems()
+      await loadPersonCandidates()
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : String(nextError))
+    } finally {
+      setActiveReviewItemId(null)
+    }
+  }
+
   return (
     <section className="workspace-panel">
       <div className="section-heading inline-heading">
@@ -595,6 +625,46 @@ function ReviewWorkspace() {
           {error}
         </div>
       ) : null}
+      <div className="review-merge-panel">
+        <label>
+          <span>保留人员</span>
+          <select value={mergeTargetPersonId} onChange={(event) => setMergeTargetPersonId(event.target.value)}>
+            <option value="">待选择</option>
+            {personCandidates.map((person) => (
+              <option key={person.id} value={person.id}>
+                {personCandidateLabel(person)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>合并人员</span>
+          <select value={mergeSourcePersonId} onChange={(event) => setMergeSourcePersonId(event.target.value)}>
+            <option value="">待选择</option>
+            {personCandidates
+              .filter((person) => person.id !== mergeTargetPersonId)
+              .map((person) => (
+                <option key={person.id} value={person.id}>
+                  {personCandidateLabel(person)}
+                </option>
+              ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          className="ghost-button"
+          onClick={() => void handleMergePeople()}
+          disabled={Boolean(activeReviewItemId)}
+        >
+          {activeReviewItemId === 'people-merge' ? '合并中' : '合并人员'}
+        </button>
+        {mergeResult ? (
+          <small>
+            已合并 {mergeResult.mergedSourcePersonIds.length} 人，转移 {mergeResult.movedDocumentCount} 份资料、
+            {mergeResult.movedLicenseCount} 条证书。
+          </small>
+        ) : null}
+      </div>
       {items.length > 0 ? (
         <>
           <div className="review-summary-row">

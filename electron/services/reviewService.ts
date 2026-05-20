@@ -59,6 +59,20 @@ export interface CreatePersonFromReviewInput {
   region?: string | null
 }
 
+export interface MergePeopleInput {
+  targetPersonId: string
+  sourcePersonIds: string[]
+  reason?: string | null
+}
+
+export interface MergePeopleResult {
+  targetPerson: PersonCandidateSummary
+  mergedSourcePersonIds: string[]
+  movedDocumentCount: number
+  movedLicenseCount: number
+  auditLogId: string
+}
+
 interface ReviewItemRow {
   id: string
   item_type: string | null
@@ -133,6 +147,13 @@ interface PersonReassignSnapshot {
 
 interface CreatePersonSnapshot extends PersonReassignSnapshot {
   createdPerson?: PersonCandidateSummary
+}
+
+interface MergePeopleSnapshot {
+  targetPersonId: string
+  sourcePersonIds: string[]
+  documentIdsByPerson: Record<string, string[]>
+  licenseIdsByPerson: Record<string, string[]>
 }
 
 export function listReviewItems(
@@ -556,6 +577,125 @@ export function createPersonFromReviewItem(
 
   return {
     reviewItem: getReviewItemById(db, reviewItemId),
+    auditLogId,
+  }
+}
+
+export function mergePeople(
+  db: Database.Database,
+  input: MergePeopleInput,
+): MergePeopleResult {
+  const targetPersonId = normalizeRequiredText(input.targetPersonId, '保留人员')
+  const sourcePersonIds = uniqueValues(input.sourcePersonIds.map((personId) => normalizeRequiredText(personId, '合并人员')))
+    .filter((personId) => personId !== targetPersonId)
+
+  if (sourcePersonIds.length === 0) {
+    throw new Error('请选择至少一个不同于保留人员的合并人员。')
+  }
+
+  const targetPerson = readPersonCandidateById(db, targetPersonId)
+  const sourcePeople = sourcePersonIds.map((personId) => readPersonCandidateById(db, personId))
+  const now = new Date().toISOString()
+  const beforeValue = readMergePeopleSnapshot(db, targetPersonId, sourcePersonIds)
+  const auditLogId = randomUUID()
+  let movedDocumentCount = 0
+  let movedLicenseCount = 0
+
+  const transaction = db.transaction(() => {
+    const documentResult = db.prepare(`
+      UPDATE person_documents
+      SET
+        person_id = @targetPersonId,
+        updated_at = @updatedAt
+      WHERE person_id = @sourcePersonId
+        AND status = 'active'
+    `)
+    const licenseResult = db.prepare(`
+      UPDATE licenses
+      SET
+        person_id = @targetPersonId,
+        primary_category = COALESCE(primary_category, @targetPrimaryCategory),
+        region = COALESCE(region, @targetRegion),
+        updated_at = @updatedAt
+      WHERE person_id = @sourcePersonId
+        AND status = 'active'
+    `)
+    const softDeletePerson = db.prepare(`
+      UPDATE people
+      SET
+        status = 'merged',
+        archive_dirty = 1,
+        deleted_at = @deletedAt,
+        deleted_reason = @deletedReason,
+        updated_at = @updatedAt
+      WHERE id = @personId
+    `)
+
+    for (const sourcePerson of sourcePeople) {
+      movedDocumentCount += documentResult.run({
+        targetPersonId,
+        sourcePersonId: sourcePerson.id,
+        updatedAt: now,
+      }).changes
+      movedLicenseCount += licenseResult.run({
+        targetPersonId,
+        sourcePersonId: sourcePerson.id,
+        targetPrimaryCategory: targetPerson.primaryCategory,
+        targetRegion: targetPerson.region,
+        updatedAt: now,
+      }).changes
+      softDeletePerson.run({
+        personId: sourcePerson.id,
+        deletedAt: now,
+        deletedReason: `合并到人员 ${targetPersonId}`,
+        updatedAt: now,
+      })
+    }
+
+    markPeopleArchiveDirty(db, [targetPersonId, ...sourcePersonIds], now)
+
+    const afterValue = readMergePeopleSnapshot(db, targetPersonId, sourcePersonIds)
+    db.prepare(`
+      INSERT INTO audit_logs (
+        id,
+        target_type,
+        target_id,
+        action,
+        before_value,
+        after_value,
+        reason,
+        created_at
+      )
+      VALUES (
+        @id,
+        'person',
+        @targetId,
+        '合并人员',
+        @beforeValue,
+        @afterValue,
+        @reason,
+        @createdAt
+      )
+    `).run({
+      id: auditLogId,
+      targetId: targetPersonId,
+      beforeValue: JSON.stringify(beforeValue),
+      afterValue: JSON.stringify(afterValue),
+      reason: JSON.stringify({
+        sourcePersonIds,
+        note: normalizeOptionalText(input.reason),
+      }),
+      createdAt: now,
+    })
+  })
+
+  transaction()
+
+  return {
+    targetPerson: readPersonCandidateById(db, targetPersonId),
+    mergedSourcePersonIds: sourcePersonIds,
+    movedDocumentCount,
+    movedLicenseCount,
     auditLogId,
   }
 }
@@ -1156,6 +1296,42 @@ function readCreatePersonSnapshot(
           documentCount: createdPerson.document_count,
         }
       : undefined,
+  }
+}
+
+function readMergePeopleSnapshot(
+  db: Database.Database,
+  targetPersonId: string,
+  sourcePersonIds: string[],
+): MergePeopleSnapshot {
+  const personIds = [targetPersonId, ...sourcePersonIds]
+  const documentIdsByPerson: Record<string, string[]> = {}
+  const licenseIdsByPerson: Record<string, string[]> = {}
+  const documentRows = db.prepare(`
+    SELECT id, person_id
+    FROM person_documents
+    WHERE status = 'active'
+  `).all() as Array<{ id: string, person_id: string | null }>
+  const licenseRows = db.prepare(`
+    SELECT id, person_id
+    FROM licenses
+    WHERE status = 'active'
+  `).all() as Array<{ id: string, person_id: string | null }>
+
+  for (const personId of personIds) {
+    documentIdsByPerson[personId] = documentRows
+      .filter((row) => row.person_id === personId)
+      .map((row) => row.id)
+    licenseIdsByPerson[personId] = licenseRows
+      .filter((row) => row.person_id === personId)
+      .map((row) => row.id)
+  }
+
+  return {
+    targetPersonId,
+    sourcePersonIds,
+    documentIdsByPerson,
+    licenseIdsByPerson,
   }
 }
 

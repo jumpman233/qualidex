@@ -28,6 +28,7 @@
     "verify:review-license-update": "node scripts/verify-review-license-update.mjs",
     "verify:review-create-person": "node scripts/verify-review-create-person.mjs",
     "verify:review-person-reassign": "node scripts/verify-review-person-reassign.mjs",
+    "verify:people-merge": "node scripts/verify-people-merge.mjs",
     "verify:db": "pnpm run rebuild:native && node scripts/verify-db.mjs"
   },
   "dependencies": {

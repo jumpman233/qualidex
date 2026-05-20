@@ -1,6 +1,6 @@
 # Qualidex 工作交接记录
 
-更新时间：2026-05-19
+更新时间：2026-05-20
 
 这份文档放在 `docs/work-breakdown.md` 旁边，用于换号、恢复上下文或重新进入任务时快速接续。
 
@@ -43,6 +43,32 @@
 - 已基于 `docs/ui/ui.png` 和 `docs/ui/design-require.md` 实现单页工作台。
 - 覆盖 `home / search / import / review / export` 首版页面状态。
 - UI 仍有部分历史乱码文案需要后续顺手清理，但近期新增内容应坚持中文。
+
+### P1-F 人员合并 / 拆分工作流
+
+主要文件：
+
+- `electron/services/reviewService.ts`
+- `electron/main.ts`
+- `electron/preload.ts`
+- `src/components/MainWorkspace.tsx`
+- `scripts/verify-people-merge.mjs`
+
+能力：
+
+- 待确认文件可切换到已有人员。
+- 待确认文件可拆分到新建人员。
+- 两个已有人员可合并，源人员状态标记为 `merged`，不物理删除记录。
+- 合并会把源人员的 `person_documents` 和 `licenses` 转移到目标人员。
+- 合并、切换、新建都会写入 `audit_logs`，并标记相关人员 `archive_dirty`。
+
+验证：
+
+```powershell
+pnpm run verify:people-merge
+pnpm run verify:review-person-reassign
+pnpm run verify:review-create-person
+```
 
 ### P1-A 导入批次 / 新增文件夹 / 重新扫描
 
@@ -304,9 +330,9 @@ pnpm run lint
 pnpm run build
 ```
 
-## 当前拆分：P1-E 已完成
+## 当前拆分：P1-F 已完成
 
-P1-E 的当前拆分项已经完成：
+P1-E / P1-F 的当前拆分项已经完成：
 
 1. 前端导入与处理队列真实接入。
 2. 待确认真实列表只读接入。
@@ -315,6 +341,7 @@ P1-E 的当前拆分项已经完成：
 5. 待确认文件切换到已有人员。
 6. 待确认证书名称、证书认可状态字段编辑。
 7. 从待确认项新建人员，并把当前文件的资料关联和证书关联绑定到新人员。
+8. 两个已有人员可合并，源人员软删除为 `merged`，资料和证书关联转移到目标人员。
 
 新增验证：
 
@@ -325,17 +352,17 @@ pnpm run verify:review-list
 pnpm run verify:review-actions
 pnpm run verify:review-field-update
 pnpm run verify:review-person-reassign
+pnpm run verify:people-merge
 pnpm run lint
 pnpm run build
 ```
 
 ### 后续步骤
 
-1. 人员合并 / 拆分工作流。
-2. 查询页真实条件确认与 SQL 查询。
-3. 完整导出：查询结果 Excel + 人员资料文件夹。
-4. 回收站、软删除恢复、归档输出清理。
-5. 单测与 E2E 补齐。
+1. 查询页真实条件确认与 SQL 查询。
+2. 完整导出：查询结果 Excel + 人员资料文件夹。
+3. 回收站、软删除恢复、归档输出清理。
+4. 单测与 E2E 补齐。
 
 ## 当前验证注意事项
 
@@ -365,5 +392,5 @@ pnpm exec prebuild-install --runtime=electron --target=30.0.1 --dist-url=https:/
 可以直接说：
 
 ```text
-继续 Qualidex，先读 AGENTS.md 和 docs/work-breakdown-handoff.md。P1-E 已完成，请从人员合并 / 拆分工作流开始拆分；执行前按老规则说明步骤并确认。
+继续 Qualidex，先读 AGENTS.md 和 docs/work-breakdown-handoff.md。P1-E / P1-F 已完成，请从查询页真实条件确认与 SQL 查询开始拆分；执行前按老规则说明步骤并确认。
 ```

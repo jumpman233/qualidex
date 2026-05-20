@@ -214,6 +214,20 @@ interface CreatePersonFromReviewInput {
   region?: string | null
 }
 
+interface MergePeopleInput {
+  targetPersonId: string
+  sourcePersonIds: string[]
+  reason?: string | null
+}
+
+interface MergePeopleResult {
+  targetPerson: PersonCandidateSummary
+  mergedSourcePersonIds: string[]
+  movedDocumentCount: number
+  movedLicenseCount: number
+  auditLogId: string
+}
+
 interface Window {
   qualidex: {
     getAppInfo(): Promise<AppInfo>
@@ -234,6 +248,7 @@ interface Window {
     listPersonCandidates(query?: string, limit?: number): Promise<PersonCandidateSummary[]>
     reassignReviewPerson(reviewItemId: string, personId: string): Promise<ReviewItemActionResult>
     createPersonFromReview(reviewItemId: string, input: CreatePersonFromReviewInput): Promise<ReviewItemActionResult>
+    mergePeople(input: MergePeopleInput): Promise<MergePeopleResult>
     exportRecognitionReviewExcel(): Promise<RecognitionReviewExportResult | null>
   }
 }

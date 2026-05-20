@@ -229,6 +229,20 @@ interface CreatePersonFromReviewInput {
   region?: string | null
 }
 
+interface MergePeopleInput {
+  targetPersonId: string
+  sourcePersonIds: string[]
+  reason?: string | null
+}
+
+interface MergePeopleResult {
+  targetPerson: PersonCandidateSummary
+  mergedSourcePersonIds: string[]
+  movedDocumentCount: number
+  movedLicenseCount: number
+  auditLogId: string
+}
+
 // Used in Renderer process, exposed in `preload.ts`.
 interface Window {
   qualidex: {
@@ -250,5 +264,6 @@ interface Window {
     listPersonCandidates(query?: string, limit?: number): Promise<PersonCandidateSummary[]>
     reassignReviewPerson(reviewItemId: string, personId: string): Promise<ReviewItemActionResult>
     createPersonFromReview(reviewItemId: string, input: CreatePersonFromReviewInput): Promise<ReviewItemActionResult>
+    mergePeople(input: MergePeopleInput): Promise<MergePeopleResult>
   }
 }

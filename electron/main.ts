@@ -28,9 +28,11 @@ import {
   ignoreReviewItem,
   listPersonCandidates,
   listReviewItems,
+  mergePeople,
   reassignReviewFilePerson,
   updateReviewFields,
   type CreatePersonFromReviewInput,
+  type MergePeopleInput,
   type ReviewFieldPatch,
 } from './services/reviewService'
 
@@ -176,6 +178,10 @@ ipcMain.handle('review:reassign-person', async (_event, reviewItemId: string, pe
 
 ipcMain.handle('review:create-person', async (_event, reviewItemId: string, input: CreatePersonFromReviewInput) => {
   return createPersonFromReviewItem(getDatabase(), reviewItemId, input)
+})
+
+ipcMain.handle('people:merge', async (_event, input: MergePeopleInput) => {
+  return mergePeople(getDatabase(), input)
 })
 
 ipcMain.handle('export:recognition-review-excel', async () => {

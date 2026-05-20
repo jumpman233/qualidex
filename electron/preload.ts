@@ -55,6 +55,9 @@ contextBridge.exposeInMainWorld('qualidex', {
   createPersonFromReview(reviewItemId: string, input: unknown) {
     return ipcRenderer.invoke('review:create-person', reviewItemId, input)
   },
+  mergePeople(input: unknown) {
+    return ipcRenderer.invoke('people:merge', input)
+  },
   exportRecognitionReviewExcel() {
     return ipcRenderer.invoke('export:recognition-review-excel')
   },
