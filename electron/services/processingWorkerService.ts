@@ -33,6 +33,8 @@ interface FileTaskRow {
   ext: string | null
   parent_folder: string | null
   ocr_text: string | null
+  sha256: string | null
+  process_status: string | null
   source_batch_id: string | null
   default_primary_category: string | null
   default_region: string | null
@@ -103,6 +105,14 @@ async function executeOcrTask(
   if (!file) {
     return {
       task: failProcessingTask(db, task.id, '任务缺少可处理的文件'),
+      createdTask: null,
+    }
+  }
+
+  const skipReason = getUnprocessableFileReason(file)
+  if (skipReason) {
+    return {
+      task: skipProcessingTask(db, task.id, skipReason),
       createdTask: null,
     }
   }
@@ -180,6 +190,16 @@ async function executeAiExtractTask(
     }
   }
 
+  const skipReason = getUnprocessableFileReason(file)
+  if (skipReason) {
+    updateFileProcessStatus(db, file.id, 'ai_skipped', skipReason)
+
+    return {
+      task: skipProcessingTask(db, task.id, skipReason),
+      createdTask: null,
+    }
+  }
+
   if (!file.ocr_text?.trim()) {
     updateFileProcessStatus(db, file.id, 'ai_skipped', '没有 OCR 文本，跳过 AI 抽取。')
 
@@ -245,6 +265,8 @@ function getFileForTask(db: Database.Database, fileId: string): FileTaskRow | nu
       files.ext,
       files.parent_folder,
       files.ocr_text,
+      files.sha256,
+      files.process_status,
       files.source_batch_id,
       import_batches.default_primary_category,
       import_batches.default_region
@@ -255,6 +277,18 @@ function getFileForTask(db: Database.Database, fileId: string): FileTaskRow | nu
   `).get(fileId) as FileTaskRow | undefined
 
   return row ?? null
+}
+
+function getUnprocessableFileReason(file: FileTaskRow): string | null {
+  if (file.process_status === 'duplicate') {
+    return '重复文件不应进入处理队列，已跳过。'
+  }
+
+  if (file.process_status === 'failed' && !file.sha256) {
+    return '文件导入失败且缺少 hash，不进入 OCR / AI 处理。'
+  }
+
+  return null
 }
 
 function updateFileProcessStatus(

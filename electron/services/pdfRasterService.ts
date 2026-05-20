@@ -13,6 +13,11 @@ export interface PdfRasterResult {
   warnings: string[]
 }
 
+interface PopplerCommandResult {
+  stdout: string
+  stderr: string
+}
+
 interface PopplerConfig {
   executablePath: string
   dpi: number
@@ -22,6 +27,23 @@ interface PopplerConfig {
 const DEFAULT_DPI = 300
 const DEFAULT_MAX_PAGES = 20
 const RASTER_TIMEOUT_MS = 120_000
+const TEXT_TIMEOUT_MS = 60_000
+
+export async function extractPdfTextLayer(pdfPath: string): Promise<string> {
+  const executableName = process.platform === 'win32' ? 'pdftotext.exe' : 'pdftotext'
+  const executablePath = resolvePopplerExecutable(executableName)
+  const result = await runPoppler(
+    executablePath,
+    ['-enc', 'UTF-8', '-layout', '-nopgbrk', pdfPath, '-'],
+    {
+      label: 'PDF 文本层提取',
+      timeoutMs: TEXT_TIMEOUT_MS,
+      executableName,
+    },
+  )
+
+  return result.stdout
+}
 
 export async function rasterizePdfPages(
   pdfPath: string,
@@ -42,7 +64,11 @@ export async function rasterizePdfPages(
     String(config.maxPages),
     pdfPath,
     outputPrefix,
-  ])
+  ], {
+    label: 'PDF 转图片',
+    timeoutMs: RASTER_TIMEOUT_MS,
+    executableName: process.platform === 'win32' ? 'pdftoppm.exe' : 'pdftoppm',
+  })
 
   const imagePaths = readdirSync(outputDirectory)
     .filter((fileName) => /^page-\d+\.png$/i.test(fileName))
@@ -61,24 +87,30 @@ export async function rasterizePdfPages(
 
 function loadPopplerConfig(options: PdfRasterOptions): PopplerConfig {
   const env = loadEnvironment()
-  const binDirectory = env.POPPLER_BIN_DIR?.trim()
   const executableName = process.platform === 'win32' ? 'pdftoppm.exe' : 'pdftoppm'
-  const bundledExecutablePath = resolveBundledPopplerExecutable(executableName)
-  const executablePath = binDirectory
-    ? path.join(binDirectory, executableName)
-    : bundledExecutablePath ?? executableName
+  const executablePath = resolvePopplerExecutable(executableName, env)
   const dpi = parsePositiveInteger(env.PDF_OCR_DPI, options.dpi ?? DEFAULT_DPI)
   const maxPages = parsePositiveInteger(env.PDF_OCR_MAX_PAGES, options.maxPages ?? DEFAULT_MAX_PAGES)
-
-  if (binDirectory && !existsSync(executablePath)) {
-    throw new Error(`Poppler 未找到：${executablePath}。请检查 POPPLER_BIN_DIR。`)
-  }
 
   return {
     executablePath,
     dpi,
     maxPages,
   }
+}
+
+function resolvePopplerExecutable(executableName: string, env = loadEnvironment()): string {
+  const binDirectory = env.POPPLER_BIN_DIR?.trim()
+  const bundledExecutablePath = resolveBundledPopplerExecutable(executableName)
+  const executablePath = binDirectory
+    ? path.join(binDirectory, executableName)
+    : bundledExecutablePath ?? executableName
+
+  if (binDirectory && !existsSync(executablePath)) {
+    throw new Error(`Poppler 未找到：${executablePath}。请检查 POPPLER_BIN_DIR。`)
+  }
+
+  return executablePath
 }
 
 function resolveBundledPopplerExecutable(executableName: string): string | null {
@@ -153,7 +185,11 @@ function parsePositiveInteger(value: string | undefined, fallback: number): numb
   return parsed
 }
 
-function runPoppler(executablePath: string, args: string[]): Promise<void> {
+function runPoppler(
+  executablePath: string,
+  args: string[],
+  options: { label: string; timeoutMs: number; executableName: string },
+): Promise<PopplerCommandResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(executablePath, args, {
       windowsHide: true,
@@ -166,8 +202,8 @@ function runPoppler(executablePath: string, args: string[]): Promise<void> {
     const timeout = setTimeout(() => {
       settled = true
       child.kill()
-      reject(new Error(`PDF 转图片超时：${RASTER_TIMEOUT_MS / 1000}s`))
-    }, RASTER_TIMEOUT_MS)
+      reject(new Error(`${options.label}超时：${options.timeoutMs / 1000}s`))
+    }, options.timeoutMs)
 
     child.stdout.setEncoding('utf8')
     child.stderr.setEncoding('utf8')
@@ -184,10 +220,10 @@ function runPoppler(executablePath: string, args: string[]): Promise<void> {
       settled = true
       clearTimeout(timeout)
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        reject(new Error('未找到 Poppler 的 pdftoppm。请安装 Poppler，并在 .env.local 中配置 POPPLER_BIN_DIR。'))
+        reject(new Error(`未找到 Poppler 的 ${options.executableName}。请安装 Poppler，或使用项目依赖中的 pdf-poppler，并在 .env.local 中配置 POPPLER_BIN_DIR。`))
         return
       }
-      reject(new Error(`启动 Poppler 失败：${error.message}`))
+      reject(new Error(`启动 Poppler ${options.executableName} 失败：${error.message}`))
     })
     child.on('close', (code) => {
       if (settled) {
@@ -197,12 +233,12 @@ function runPoppler(executablePath: string, args: string[]): Promise<void> {
       clearTimeout(timeout)
 
       if (code === 0) {
-        resolve()
+        resolve({ stdout, stderr })
         return
       }
 
       const details = stderr.trim() || stdout.trim()
-      reject(new Error(`PDF 转图片失败，退出码 ${code ?? 'unknown'}${details ? `：${details.slice(0, 500)}` : ''}`))
+      reject(new Error(`${options.label}失败，退出码 ${code ?? 'unknown'}${details ? `：${details.slice(0, 500)}` : ''}`))
     })
   })
 }

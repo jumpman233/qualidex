@@ -205,6 +205,9 @@ CREATE TABLE licenses (
 
   recognition_status TEXT,
   recognition_reason TEXT,
+  official_status TEXT,
+  official_status_source TEXT,
+  official_status_updated_at TEXT,
 
   issuer_authority_level TEXT,
   issuer_authority_score INTEGER,
@@ -228,6 +231,35 @@ CREATE TABLE licenses (
 - `primary_category` 表示证书当前归属人员的主类别。
 - `detected_categories` 可以存 JSON 字符串，例如 `["工程", "消防员"]`。
 - MVP 可以只使用 `primary_category`。
+
+#### 证书官方 / 非官方人工标签
+
+每个人员证书需要预留一个人工维护标签，用于标记该证书在业务语境下是否属于“官方”证书。
+
+建议字段：
+
+```text
+official_status:
+- official
+- unofficial
+- null
+
+official_status_source:
+- manual
+- null
+
+official_status_updated_at:
+- ISO datetime | null
+```
+
+设计要求：
+
+- `official_status` 默认必须为 `null`，表示尚未人工判断。
+- 该字段只能由用户手动添加、修改或清空，AI / OCR / 规则不得自动写为 `official` 或 `unofficial`。
+- AI 可以在待确认信息中提供证据文本，但不能替代人工标签。
+- 该字段是“证书本身在业务上的官方 / 非官方标签”，不要和 `issuer_authority_*` 混用。
+- 修改该字段需要写入 `audit_logs`。
+- 查询和导出可以展示该标签，但默认不应把 `null` 当作非官方。
 
 #### 颁发机构权威性字段说明
 

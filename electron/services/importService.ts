@@ -274,14 +274,14 @@ export async function importDirectory(
         if (importedFiles.length < PREVIEW_LIMIT) {
           importedFiles.push({
             ...file,
-            id: existingHash.id,
+            id: `duplicate:${sha256}`,
             sha256,
             importStatus,
-            processStatus: 'duplicate',
-            processError: null,
-            ocrStatus: 'duplicate',
+            processStatus: 'skipped',
+            processError: `重复文件，已存在记录 ${existingHash.id}，本次不入库、不创建处理任务。`,
+            ocrStatus: 'skipped',
             ocrTextPreview: '',
-            aiStatus: 'duplicate',
+            aiStatus: 'skipped',
           })
         }
 

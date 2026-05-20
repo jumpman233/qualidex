@@ -203,9 +203,15 @@ app.whenReady().then(async () => {
         .prepare("select count(*) as count from files where process_status = 'duplicate'")
         .get().count;
       const taskCount = db.prepare('select count(*) as count from processing_tasks').get().count;
+      const duplicatePreview = addFolderImport.files.find((file) => file.importStatus === 'duplicate');
       assertEqual(fileCount, 3, 'file rows only include new unique files');
       assertEqual(duplicateCount, 0, 'duplicate files are not persisted');
       assertEqual(taskCount, 3, 'processing tasks are only created for new unique files');
+      assert(Boolean(duplicatePreview), 'duplicate preview row exists');
+      assert(String(duplicatePreview.id).startsWith('duplicate:'), 'duplicate preview id is not a database file id');
+      assertEqual(duplicatePreview.processStatus, 'skipped', 'duplicate preview process status');
+      assertEqual(duplicatePreview.ocrStatus, 'skipped', 'duplicate preview OCR status');
+      assertEqual(duplicatePreview.aiStatus, 'skipped', 'duplicate preview AI status');
 
       assert(require('node:fs').existsSync(${JSON.stringify(path.join(fullImportRoot, 'alpha.txt'))}), 'original full import file remains');
       assert(require('node:fs').existsSync(${JSON.stringify(path.join(addFolderRoot, '新增', 'gamma.txt'))}), 'original add-folder file remains');

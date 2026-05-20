@@ -183,11 +183,13 @@ app.whenReady().then(async () => {
       assertEqual(dirtyCount, 3, 'archive dirty people');
       assertEqual(multiPersonCount, 0, 'multi-person file count');
 
-      const license = db.prepare("select normalized_license_name, detected_categories, needs_review, recognition_status from licenses where file_id = 'file-1'").get();
+      const license = db.prepare("select normalized_license_name, detected_categories, needs_review, recognition_status, official_status, official_status_source from licenses where file_id = 'file-1'").get();
       assertEqual(license.normalized_license_name, '二级建造师', 'normalized license name');
       assertEqual(JSON.parse(license.detected_categories)[0], '工程', 'detected category');
       assertEqual(license.needs_review, 0, 'high confidence license review flag');
       assertEqual(license.recognition_status, 'suggested', 'high confidence recognition status');
+      assertEqual(license.official_status, null, 'license official status should default to null');
+      assertEqual(license.official_status_source, null, 'license official status source should default to null');
 
       const lowLicense = db.prepare("select needs_review, recognition_status from licenses where file_id = 'file-3'").get();
       assertEqual(lowLicense.needs_review, 1, 'low confidence license review flag');

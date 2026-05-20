@@ -109,6 +109,9 @@ export function initializeSchema(db: Database.Database): void {
       valid_until TEXT,
       recognition_status TEXT,
       recognition_reason TEXT,
+      official_status TEXT,
+      official_status_source TEXT,
+      official_status_updated_at TEXT,
       issuer_authority_level TEXT,
       issuer_authority_score INTEGER,
       issuer_authority_source TEXT,
@@ -229,6 +232,9 @@ export function initializeSchema(db: Database.Database): void {
   ensureColumn(db, 'licenses', 'issuer_authority_source', 'TEXT')
   ensureColumn(db, 'licenses', 'issuer_authority_reason', 'TEXT')
   ensureColumn(db, 'licenses', 'issuer_authority_review_status', 'TEXT')
+  ensureColumn(db, 'licenses', 'official_status', 'TEXT')
+  ensureColumn(db, 'licenses', 'official_status_source', 'TEXT')
+  ensureColumn(db, 'licenses', 'official_status_updated_at', 'TEXT')
 }
 
 function ensureColumn(

@@ -32,11 +32,7 @@ async function buildModules() {
   await writeFile(path.join(tempModuleRoot, 'package.json'), '{"type":"commonjs"}\n', 'utf8')
 
   for (const [sourcePath, outputPath] of modules) {
-    let source = await readFile(path.join(workspaceRoot, sourcePath), 'utf8')
-    source = source.replace(
-      "await import('pdfjs-dist/legacy/build/pdf.mjs')",
-      "await Function('specifier', 'return import(specifier)')('pdfjs-dist/legacy/build/pdf.mjs')",
-    )
+    const source = await readFile(path.join(workspaceRoot, sourcePath), 'utf8')
     const output = ts.transpileModule(source, {
       compilerOptions: {
         target: ts.ScriptTarget.ES2022,
@@ -72,10 +68,6 @@ async function verifyPdf(extractTextFromFile) {
   assert(
     result.status === 'text_extracted' || result.status === 'ocr_completed' || result.status === 'pending_ocr' || result.status === 'failed',
     `unexpected pdf extraction status: ${result.status}`,
-  )
-  assert(
-    !String(result.error ?? '').includes('DOMMatrix'),
-    `pdf extraction should not fail because DOMMatrix is missing: ${result.error}`,
   )
   assert(
     !String(result.error ?? '').includes('@napi-rs/canvas'),

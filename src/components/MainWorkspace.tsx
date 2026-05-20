@@ -360,11 +360,17 @@ function ImportWorkspace() {
                 <article key={`${file.path}-${file.sha256 ?? file.name}`} className="status-row">
                   <div>
                     <strong>{file.name}</strong>
-                    <span>{file.relativePath}</span>
+                    <span>{file.processError ?? file.relativePath}</span>
                   </div>
                   <span className={`status-pill ${statusTone(file.importStatus)}`}>{importStatusLabel(file.importStatus)}</span>
-                  <span className={`status-pill ${statusTone(file.ocrStatus)}`}>{file.ocrStatus ?? '待识别'}</span>
-                  <span className={`status-pill ${statusTone(file.aiStatus)}`}>{file.aiStatus ?? '待整理'}</span>
+                  {file.importStatus === 'duplicate' ? (
+                    <span className="status-pill gray">不创建任务</span>
+                  ) : (
+                    <>
+                      <span className={`status-pill ${statusTone(file.ocrStatus)}`}>{file.ocrStatus ?? '待识别'}</span>
+                      <span className={`status-pill ${statusTone(file.aiStatus)}`}>{file.aiStatus ?? '待整理'}</span>
+                    </>
+                  )}
                 </article>
               ))}
             </div>
