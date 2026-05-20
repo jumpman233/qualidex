@@ -162,6 +162,20 @@ pnpm run build
 
 ## Native Binding 注意事项
 
+## PDF 扫描件 OCR
+
+扫描型 / 纯照片 PDF 的处理方式见 `docs/pdf-ocr-poppler.md`。核心规则：
+
+- `pdfjs-dist` 只负责优先提取 PDF 文本层。
+- 文本层为空或 `pdfjs-dist` 触发 worker / canvas 相关问题时，使用 Poppler 转 PNG 后进入本地图片 OCR。
+- 原始 PDF 只读，页面图片只生成到临时目录。
+
+验收命令：
+
+```powershell
+pnpm run verify:text-extract
+```
+
 ## 开发库清理
 
 如果早期开发版本已经把重复文件或 hash 失败文件写入 `files` 表，可先执行 dry-run：

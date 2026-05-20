@@ -12,6 +12,7 @@ const privateFixtureRoot = path.join(workspaceRoot, 'test-fixtures', 'ocr-source
 
 const modules = [
   ['electron/services/ocrService.ts', 'electron/services/ocrService.js'],
+  ['electron/services/pdfRasterService.ts', 'electron/services/pdfRasterService.js'],
   ['electron/services/textExtractService.ts', 'electron/services/textExtractService.js'],
 ]
 
@@ -64,17 +65,26 @@ async function verifyTxt(extractTextFromFile) {
 }
 
 async function verifyPdf(extractTextFromFile) {
-  const pdfPath = findFirstFixture(['.pdf']) ?? (await createMinimalPdfFile())
+  const privatePdfPath = findFirstFixture(['.pdf'])
+  const pdfPath = privatePdfPath ?? (await createMinimalPdfFile())
 
   const result = await extractTextFromFile(pdfPath, '.pdf')
   assert(
-    result.status === 'text_extracted' || result.status === 'pending_ocr' || result.status === 'failed',
+    result.status === 'text_extracted' || result.status === 'ocr_completed' || result.status === 'pending_ocr' || result.status === 'failed',
     `unexpected pdf extraction status: ${result.status}`,
   )
   assert(
     !String(result.error ?? '').includes('DOMMatrix'),
     `pdf extraction should not fail because DOMMatrix is missing: ${result.error}`,
   )
+  assert(
+    !String(result.error ?? '').includes('@napi-rs/canvas'),
+    `pdf extraction should not fail because canvas is missing: ${result.error}`,
+  )
+  if (privatePdfPath && result.status === 'failed' && isPopplerUnavailable(result.error)) {
+    console.log(`pdf scanned fallback skipped: Poppler 未配置，未执行扫描型 PDF OCR 验证。${result.error}`)
+    return
+  }
   console.log(`pdf: ${result.status}, length=${result.text.length}`)
 }
 
@@ -99,6 +109,11 @@ function findFirstFixture(extensions) {
   const entries = Array.from(readdirSync(privateFixtureRoot))
   const match = entries.find((entry) => extensions.includes(path.extname(entry).toLowerCase()))
   return match ? path.join(privateFixtureRoot, match) : null
+}
+
+function isPopplerUnavailable(error) {
+  const message = String(error ?? '')
+  return message.includes('Poppler') || message.includes('pdftoppm') || message.includes('ENOENT')
 }
 
 async function createMinimalPdfFile() {

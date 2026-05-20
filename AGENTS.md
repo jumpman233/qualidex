@@ -62,6 +62,7 @@ Qualidex 是一个 Windows 本地桌面应用，用于人员资料归档与资�
 - 查询与导出：`docs/prd/03-query-export.md`
 - 待确认、编辑、删除：`docs/prd/04-review-crud.md`
 - OCR 与 AI 规则：`docs/prd/05-ai-ocr-rules.md`
+- PDF 扫描件 OCR 方案：`docs/pdf-ocr-poppler.md`
 - 数据模型：`docs/prd/06-data-model.md`
 - UI 设计：`docs/prd/07-ui-design.md`
 - MVP 与路线图：`docs/prd/08-mvp-roadmap.md`
@@ -74,6 +75,7 @@ Qualidex 是一个 Windows 本地桌面应用，用于人员资料归档与资�
 - 修改自然语言查询、类别筛选、证书匹配或导出时，读 `docs/prd/03-query-export.md`。
 - 修改待确认卡片、人员合并/拆分、编辑、软删除或回收站时，读 `docs/prd/04-review-crud.md`。
 - 修改 OCR、AI 抽取、Prompt、隐私或脱敏时，读 `docs/prd/05-ai-ocr-rules.md`。
+- 修改 PDF 文本提取、扫描型 PDF 转图、Poppler 配置或 PDF OCR fallback 时，读 `docs/pdf-ocr-poppler.md`。
 - 修改迁移、SQLite 表、SQL 查询、repository 或数据服务时，读 `docs/prd/06-data-model.md`。
 - 修改 React UI、交互、命令输入或布局时，读 `docs/prd/07-ui-design.md`。
 - 修改测试策略、验证方式、E2E 预留或开发流程时，读 `docs/development-rules.md`。
