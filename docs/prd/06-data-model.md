@@ -12,8 +12,11 @@
 CREATE TABLE people (
   id TEXT PRIMARY KEY,
   name TEXT,
+  id_card_number TEXT,
+  id_card_number_encrypted TEXT,
   id_card_last4 TEXT,
   id_card_hash TEXT,
+  masked_display TEXT,
 
   primary_category TEXT,
   primary_category_source TEXT,
@@ -42,6 +45,11 @@ CREATE TABLE people (
 - `primary_category` 是归档主类别。
 - MVP 阶段查询类别多选基于 `primary_category IN (...)`。
 - 后续如支持一人多类别，再新增 `person_categories` 表。
+- [P0] `id_card_number` 保存完整身份证号明文，仅限本地 SQLite。
+- [P1] `id_card_number_encrypted` 预留给后续加密存储。
+- [P0] `id_card_hash` 用于快速查重、归并和冲突判断。
+- [P0] `masked_display` 用于页面默认脱敏展示，例如 `1234****5678`。
+- [P0] 不允许一个人员关联多个不同完整身份证号；冲突时进入待确认。
 
 ### 19.2 person_categories，可选扩展表
 
@@ -186,6 +194,12 @@ CREATE TABLE person_documents (
 );
 ```
 
+说明：
+
+- [P0] `relation_type` 可表达 `owner`、`related`、`multi_person_related` 等关系。
+- [P0] 多人员文件应通过多条 `person_documents` 关联到所有涉及人员。
+- [P0] 多人员文件归档时仍只复制到 `_多人员资料`，不自动复制到每个人目录。
+
 ### 19.6 licenses
 
 ```sql
@@ -231,6 +245,10 @@ CREATE TABLE licenses (
 - `primary_category` 表示证书当前归属人员的主类别。
 - `detected_categories` 可以存 JSON 字符串，例如 `["工程", "消防员"]`。
 - MVP 可以只使用 `primary_category`。
+- [P0] 一个人可以关联多条 `licenses` 记录。
+- [P0] 每条证书独立保存证书名称、状态、有效期、官方 / 非官方标签和颁发机构信息。
+- [P0] 查询和导出不得假设一个人员只有一张证书。
+- [P1] 证书归属不确定时，应通过待确认项调整 `person_id`。
 
 #### 证书官方 / 非官方人工标签
 
@@ -362,6 +380,37 @@ CREATE TABLE review_items (
   updated_at TEXT
 );
 ```
+
+### 19.8.1 categories，P1 配置化
+
+MVP 可以使用内置类别列表：
+
+```text
+工程
+环境
+消防员
+未识别类别
+```
+
+P1 可新增配置表：
+
+```sql
+CREATE TABLE categories (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  code TEXT,
+  sort_order INTEGER,
+  status TEXT DEFAULT 'active',
+  created_at TEXT,
+  updated_at TEXT
+);
+```
+
+说明：
+
+- [P1] 主类别和查询可选类别来自配置表。
+- [P1] 查询和导出支持多选类别。
+- [P1] 导出需要显示本次选择的类别范围和匹配逻辑。
 
 ### 19.9 export_jobs
 

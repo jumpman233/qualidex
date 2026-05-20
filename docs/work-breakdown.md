@@ -69,6 +69,198 @@ pnpm exec prebuild-install --runtime=electron --target=30.0.1 --dist-url=https:/
 
 本文只做开发工作拆分，不开始执行实现。
 
+## 需求变更后的后续工作拆分（2026-05-21）
+
+> 基于 `docs/prd` V1.5 变更。整体顺序 OK：先补齐完整身份证号与隐私边界，再处理归档命名、多证书、文件夹级二次归并和多人员资料；证书来源可信度与类别动态配置作为 P1 后续增强。
+
+### P0-1 完整身份证号
+
+目标：保证人员归并、冲突判断、查询、导出有稳定唯一识别依据。
+
+阅读入口：
+- 需求文档：`docs/prd/00-overview.md` 5.4.1、`docs/prd/04-review-crud.md` 10.1 / 15.1、`docs/prd/05-ai-ocr-rules.md` 22、`docs/prd/06-data-model.md` 19.1。
+- UI 文档：`docs/prd/07-ui-design.md` 18.4 / 18.5 / 18.6 / 18.8；`docs/ui/design-require.md` 的 search / review / export 交互要求。
+
+工作内容：
+- 数据库补齐 `people.id_card_number`，并预留 `id_card_number_encrypted`、`id_card_hash`、`masked_display`。
+- 本地 OCR / 本地解析器提取完整身份证号，生成 hash、后四位和脱敏展示值。
+- 云端 AI 输入前做脱敏，禁止上传完整身份证号。
+- 人员归并、冲突判断、人工合并、查询和导出逻辑改为优先使用完整身份证号或 hash。
+
+验证步骤：
+- 导入包含身份证号的样本后，本地 SQLite 能保存完整值，页面默认只显示脱敏值。
+- AI 请求日志或测试替身中不出现完整身份证号。
+- 同身份证号多文件归并到同一人；姓名相同但身份证号不同进入待确认。
+
+### P0-2 归档文件夹命名
+
+目标：归档目录不暴露完整身份证号。
+
+阅读入口：
+- 需求文档：`docs/prd/00-overview.md` 5.4.1、`docs/prd/02-archive-rules.md` 6.5 / 6.7、`docs/prd/03-query-export.md` 15.1 / 15.2、`docs/prd/06-data-model.md` 19.1 / 19.9。
+- UI 文档：`docs/prd/07-ui-design.md` 18.2 / 18.3 / 18.5 / 18.8；`docs/ui/design-require.md` 的 import / export 交互要求。
+
+工作内容：
+- 统一归档命名为 `姓名_后四位` 或 `姓名_系统编号`。
+- 归档预览、归档写入、资料导出都复用同一套安全命名规则。
+- Excel 导出保留 `export_full_id_card` 开关，默认导出脱敏值。
+
+验证步骤：
+- 归档预览和实际输出路径中不包含完整身份证号。
+- 启用和关闭 `export_full_id_card` 时，Excel 身份证字段符合预期。
+
+### P0-3 一人多证书
+
+目标：支持一个人员关联多条证书，查询和导出均准确。
+
+阅读入口：
+- 需求文档：`docs/prd/00-overview.md` 5.4.2、`docs/prd/03-query-export.md` 13 / 14.4 / 15.1 / 15.5、`docs/prd/04-review-crud.md` 11.2 / 15.1、`docs/prd/06-data-model.md` 19.6。
+- UI 文档：`docs/prd/07-ui-design.md` 18.4 / 18.5 / 18.6 / 18.8；`docs/ui/design-require.md` 的 search / review / export 交互要求。
+
+工作内容：
+- 检查并补齐 `licenses` 与 `people` 的一对多关系。
+- OCR / AI 抽取结果落库时允许同一人员写入多条证书。
+- 待确认、人员详情、查询结果、Excel 导出、文件夹导出提示中展示多证书信息。
+- 冲突提示和批量操作要同时考虑所有证书。
+
+验证步骤：
+- 同一人两张证书样本能落为两条证书记录。
+- 按任一证书查询都能命中该人员。
+- 导出结果能看到该人员的多证书信息。
+
+### P0-4 文件夹级二次归并
+
+目标：同一文件夹内资料可以被统一判断归属，降低散乱文件误归档。
+
+阅读入口：
+- 需求文档：`docs/prd/01-user-flows.md` 9、`docs/prd/02-archive-rules.md` 6.8 / 6.9、`docs/prd/04-review-crud.md` 10.4 / 11.1、`docs/prd/06-data-model.md` 19.3 / 19.8。
+- UI 文档：`docs/prd/07-ui-design.md` 18.3 / 18.4 / 18.5；`docs/ui/design-require.md` 的 import / review 交互要求。
+
+工作内容：
+- 按导入批次、父文件夹、相对路径对文件分组。
+- 对同一文件夹内的姓名、完整身份证号、类别、地区、证书线索做二次归并。
+- 冲突或多人员文件生成待确认项。
+- 数据库记录文件夹级归并结果和关联证据。
+
+验证步骤：
+- 同一文件夹内多个文件指向同一完整身份证号时，能归并为同一人。
+- 同一文件夹出现多个身份证号或多个人名时，生成待确认项。
+
+### P0-5 多人员文件识别
+
+目标：一个 PDF / 图片中出现多个人员时正确标记和关联。
+
+阅读入口：
+- 需求文档：`docs/prd/02-archive-rules.md` 6.7、`docs/prd/03-query-export.md` 15.2 / 15.3、`docs/prd/04-review-crud.md` 11.1 / 11.2、`docs/prd/06-data-model.md` 19.3 / 19.5 / 19.8。
+- UI 文档：`docs/prd/07-ui-design.md` 18.3 / 18.4 / 18.5 / 18.6 / 18.8；`docs/ui/design-require.md` 的 review / export 交互要求。
+
+工作内容：
+- 识别多人员文件，设置多人员标记。
+- 建立文件与多个人员的关联记录。
+- 归档时只复制到 `_多人员资料`，不自动复制到每个人目录。
+- 人员详情、待确认和导出中提示该文件涉及多个人。
+
+验证步骤：
+- 多人员样本能创建多个关联人员。
+- 归档输出中该文件只出现在 `_多人员资料`。
+- 查询和导出能提示多人员资料关联。
+
+### P0-6 人工校验可查看文件
+
+目标：待确认时能看到原始文件、路径和抽取证据，并能修改关键字段。
+
+阅读入口：
+- 需求文档：`docs/prd/02-archive-rules.md` 6.9、`docs/prd/04-review-crud.md` 11.1 / 11.2 / 15.1 / 15.2、`docs/prd/05-ai-ocr-rules.md` 10 / 22、`docs/prd/06-data-model.md` 19.8 / 19.11。
+- UI 文档：`docs/prd/07-ui-design.md` 18.4 / 18.5；`docs/ui/design-require.md` 的 review 交互要求。
+
+工作内容：
+- 待确认页和人员详情页支持打开原始文件、打开原始文件夹。
+- 展示源文件路径、相对路径、OCR 文本摘要、AI 抽取结果和置信度。
+- 支持修改主类别、地区、人员、资料类型、证书信息。
+- 所有人工修改写入 `audit_logs`，且不移动、不删除原始资料。
+
+验证步骤：
+- 待确认项能打开原始文件或所在文件夹。
+- 修改字段后数据库更新，审计日志存在。
+- 原始资料路径和文件内容保持不变。
+
+### P0-7 导入完成 CTA
+
+目标：导入处理完成后给用户明确下一步。
+
+阅读入口：
+- 需求文档：`docs/prd/00-overview.md` 5.8、`docs/prd/01-user-flows.md` 7.1 / 7.2 / 7.3 / 10、`docs/prd/08-mvp-roadmap.md` 22.1 / 22.3。
+- UI 文档：`docs/prd/07-ui-design.md` 18.2 / 18.3；`docs/ui/design-require.md` 的 import 交互要求。
+
+工作内容：
+- 汇总导入批次处理结果和待确认数量。
+- 有待确认时引导进入“待确认资料”。
+- 无待确认时引导进入“归档预览”。
+- 页面提示后续可查询或导出。
+
+验证步骤：
+- 构造有待确认和无待确认两类批次，CTA 分别指向正确页面。
+- CTA 不依赖 mock 数据，来自真实批次状态。
+
+### P0-8 路径语义解析
+
+目标：利用文件名、文件夹名和相对路径辅助人员归属、类别、地区判断。
+
+阅读入口：
+- 需求文档：`docs/prd/00-overview.md` 5.7、`docs/prd/01-user-flows.md` 8.2 / 9、`docs/prd/05-ai-ocr-rules.md` 9、`docs/prd/06-data-model.md` 19.3 路径字段说明、`docs/prd/08-mvp-roadmap.md` 22.6 / 24.1。
+- UI 文档：`docs/prd/07-ui-design.md` 18.4 / 18.5 / 18.6；`docs/ui/design-require.md` 的 review / search 交互要求。
+
+工作内容：
+- 解析文件名、父文件夹、相对路径中的姓名、地区、类别、资料类型线索。
+- 将路径解析结果写入数据库，作为 OCR / AI / 待确认的证据之一。
+- 路径线索和 OCR / AI 结果冲突时进入待确认。
+
+验证步骤：
+- 样本路径中的地区、类别、姓名线索能被记录。
+- 路径线索冲突时不会自动覆盖结构化结果，而是进入待确认。
+
+### P1-1 证书来源可信度
+
+目标：记录颁发机构权威性和可信度，支持人工确认优先。
+
+阅读入口：
+- 需求文档：`docs/prd/00-overview.md` 5.6 / 5.6.1、`docs/prd/03-query-export.md` 13.4 / 14.5 / 15.4 / 15.5、`docs/prd/06-data-model.md` 19.6 颁发机构权威性字段说明 / 19.7、`docs/prd/08-mvp-roadmap.md` 22.7 / 24.3。
+- UI 文档：`docs/prd/07-ui-design.md` 18.4 / 18.5 / 18.6 / 18.8；`docs/ui/design-require.md` 的 review / search / export 交互要求。
+
+工作内容：
+- 补齐 `issuer_authority_level`、`issuer_authority_score`、`issuer_authority_source`、`issuer_authority_review_status`。
+- AI / 规则仅提供建议，人工标记优先。
+- 不确定结果进入待确认。
+- 查询、导出和统计中预留可信度字段。
+
+验证步骤：
+- 人工修改可信度后优先级高于 AI / 规则建议。
+- 不确定颁发机构进入待确认。
+
+### P1-2 类别动态提供
+
+目标：从内置默认类别过渡到可配置类别列表。
+
+阅读入口：
+- 需求文档：`docs/prd/00-overview.md` 5.5、`docs/prd/01-user-flows.md` 12、`docs/prd/02-archive-rules.md` 6.2 / 6.3、`docs/prd/03-query-export.md` 14.2 / 14.3 / 15.6、`docs/prd/06-data-model.md` 19.8.1、`docs/prd/08-mvp-roadmap.md` 22.8。
+- UI 文档：`docs/prd/07-ui-design.md` 18.2 / 18.6 / 18.7 / 18.8；`docs/ui/design-require.md` 的 search / import / export 交互要求。
+
+工作内容：
+- MVP 默认类别保留：工程、环境、消防员、未识别类别。
+- 增加类别配置存储和维护入口。
+- 查询和导出复用动态类别列表，并继续支持多选类别。
+
+验证步骤：
+- 默认类别无需配置即可使用。
+- 新增类别后，导入校验、查询筛选和导出范围能看到该类别。
+
+### 总体验证口径
+
+- 所有文件操作仍只影响归档或导出目录，原始资料不移动、不删除、不覆盖。
+- 查询和导出必须基于已确认结构化数据和 SQL。
+- 低置信度、身份证冲突、多人员文件、路径冲突必须进入待确认。
+- 新增字段涉及数据模型时，同步更新迁移、Repository、IPC 类型、验证脚本和相关 PRD。
+
 ## 总体分期
 
 ### P0 样本验证版 done
@@ -85,7 +277,7 @@ pnpm exec prebuild-install --runtime=electron --target=30.0.1 --dist-url=https:/
 - 能调用 AI 将 OCR 文本抽取成人员、类别、地区、证书等结构化字段。
 - 能生成简单 Excel，用于人工验证识别效果。
 
-### P1-0 页面 UI 蓝图
+### P1-0 页面 UI 蓝图 done
 
 目标：在进入 P1 业务能力实现前，先把桌面工作台的页面结构、主要交互状态和视觉风格画出来，作为后续 React 组件拆分和真实接口接入的基准。
 

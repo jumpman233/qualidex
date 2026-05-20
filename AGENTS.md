@@ -24,6 +24,20 @@ Qualidex 是一个 Windows 本地桌面应用，用于人员资料归档与资�
 - 代码命名、类型名、文件名、目录名、脚本名可以使用英文。
 - 必要的技术术语可以保留英文，例如 Electron、Renderer、IPC、SQLite、OCR、AI、E2E。
 
+## Windows PowerShell 编码规则
+
+- 项目内中文 Markdown 文档默认按 UTF-8 读取和维护。
+- 在 Windows PowerShell 5.1 中，`Get-Content` 不带编码参数时可能把 UTF-8 中文输出成乱码；低成本验证结果是：`[Console]::OutputEncoding` 为 `utf-8`，但 `$OutputEncoding` 为 `us-ascii`，`Get-Content` 默认输出乱码，`Get-Content -Encoding utf8` 和 Node.js `fs.readFileSync(path, 'utf8')` 输出正常。
+- 读取中文文档时优先使用 `Get-Content -Encoding utf8`，或使用 Node.js 明确按 UTF-8 读取。
+- 如果 PowerShell 输出仍异常，可在当前命令中先设置：
+
+```powershell
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+$OutputEncoding = [System.Text.UTF8Encoding]::new()
+```
+
+- 看到终端乱码时，不要立刻认为文件已损坏；先用显式 UTF-8 读取或 Node.js 读取确认。只有确认文件内容本身异常时，才修复文件内容。
+
 ## 硬性产品规则
 
 以下规则不得违反。
