@@ -815,6 +815,22 @@ button:disabled {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.review-summary-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #d8e3f7;
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: #f8fbff;
+  color: #475467;
+}
+
+.review-summary-row strong {
+  color: #101828;
+  font-size: 1.45rem;
+}
+
 .review-card {
   border: 1px solid #e4e9f2;
   border-radius: 12px;
@@ -830,6 +846,23 @@ button:disabled {
   background: #fff7ed;
   color: #c2410c;
   font-weight: 800;
+}
+
+.review-detail-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.review-detail-list p {
+  margin: 0;
+  border: 1px solid #e4e9f2;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  color: #475467;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
 }
 
 .editable-grid {
@@ -855,6 +888,25 @@ button:disabled {
 
 .editable-grid label strong {
   color: #101828;
+}
+
+.editable-grid input,
+.editable-grid select {
+  min-width: 0;
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid #d8e3f7;
+  border-radius: 8px;
+  padding: 0 9px;
+  background: #ffffff;
+  color: #101828;
+  outline: 0;
+}
+
+.editable-grid input:focus,
+.editable-grid select:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
 }
 
 .pending-result {

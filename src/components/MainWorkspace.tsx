@@ -1,16 +1,20 @@
 import { Eye, Folder, Download, CheckCircle2, Search, Sparkles, MapPin, UserRound, AlertTriangle } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   exportItems,
   personResults,
   queryConditions,
-  reviewItems,
   type WorkspaceMode,
 } from '../mock/qualidexMock'
 
 interface MainWorkspaceProps {
   mode: WorkspaceMode
   onModeChange(mode: WorkspaceMode): void
+}
+
+interface NewPersonDraft {
+  name: string
+  idCardLast4: string
 }
 
 export function MainWorkspace({ mode, onModeChange }: MainWorkspaceProps) {
@@ -406,46 +410,428 @@ function statusTone(status: string | null | undefined): string {
 }
 
 function ReviewWorkspace() {
+  const [items, setItems] = useState<ReviewItemSummary[]>([])
+  const [fieldDrafts, setFieldDrafts] = useState<Record<string, ReviewFieldPatch>>({})
+  const [personCandidates, setPersonCandidates] = useState<PersonCandidateSummary[]>([])
+  const [personDrafts, setPersonDrafts] = useState<Record<string, string>>({})
+  const [newPersonDrafts, setNewPersonDrafts] = useState<Record<string, NewPersonDraft>>({})
+  const [isLoading, setIsLoading] = useState(false)
+  const [activeReviewItemId, setActiveReviewItemId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    void loadReviewItems()
+    void loadPersonCandidates()
+  }, [])
+
+  async function loadReviewItems() {
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const nextItems = await window.qualidex.listReviewItems(30)
+      setItems(nextItems)
+      setFieldDrafts(createReviewFieldDrafts(nextItems))
+      setPersonDrafts(createPersonDrafts(nextItems))
+      setNewPersonDrafts(createNewPersonDrafts(nextItems))
+    } catch (nextError) {
+      setItems([])
+      setFieldDrafts({})
+      setPersonDrafts({})
+      setNewPersonDrafts({})
+      setError(nextError instanceof Error ? nextError.message : String(nextError))
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  async function loadPersonCandidates() {
+    try {
+      const nextCandidates = await window.qualidex.listPersonCandidates('', 120)
+      setPersonCandidates(nextCandidates)
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : String(nextError))
+    }
+  }
+
+  async function handleConfirmReviewItem(item: ReviewItemSummary) {
+    setActiveReviewItemId(item.id)
+    setError(null)
+
+    try {
+      const confirmedValue = JSON.stringify({
+        personName: item.personName,
+        primaryCategory: item.primaryCategory,
+        region: item.region,
+        documentType: item.documentType,
+        licenseName: item.licenseName,
+      })
+      await window.qualidex.confirmReviewItem(item.id, confirmedValue)
+      await loadReviewItems()
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : String(nextError))
+    } finally {
+      setActiveReviewItemId(null)
+    }
+  }
+
+  async function handleIgnoreReviewItem(item: ReviewItemSummary) {
+    setActiveReviewItemId(item.id)
+    setError(null)
+
+    try {
+      await window.qualidex.ignoreReviewItem(item.id, item.reason ?? '人工忽略')
+      await loadReviewItems()
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : String(nextError))
+    } finally {
+      setActiveReviewItemId(null)
+    }
+  }
+
+  function updateFieldDraft(reviewItemId: string, patch: ReviewFieldPatch) {
+    setFieldDrafts((current) => ({
+      ...current,
+      [reviewItemId]: {
+        ...current[reviewItemId],
+        ...patch,
+      },
+    }))
+  }
+
+  function updatePersonDraft(reviewItemId: string, personId: string) {
+    setPersonDrafts((current) => ({
+      ...current,
+      [reviewItemId]: personId,
+    }))
+  }
+
+  function updateNewPersonDraft(reviewItemId: string, patch: Partial<NewPersonDraft>) {
+    setNewPersonDrafts((current) => ({
+      ...current,
+      [reviewItemId]: {
+        ...current[reviewItemId],
+        ...patch,
+      },
+    }))
+  }
+
+  async function handleSaveReviewFields(item: ReviewItemSummary) {
+    const draft = fieldDrafts[item.id] ?? {}
+    setActiveReviewItemId(item.id)
+    setError(null)
+
+    try {
+      await window.qualidex.updateReviewFields(item.id, draft)
+      await loadReviewItems()
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : String(nextError))
+    } finally {
+      setActiveReviewItemId(null)
+    }
+  }
+
+  async function handleReassignPerson(item: ReviewItemSummary) {
+    const personId = personDrafts[item.id]
+    if (!personId) {
+      setError('请先选择要关联的人员。')
+      return
+    }
+
+    setActiveReviewItemId(item.id)
+    setError(null)
+
+    try {
+      await window.qualidex.reassignReviewPerson(item.id, personId)
+      await loadReviewItems()
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : String(nextError))
+    } finally {
+      setActiveReviewItemId(null)
+    }
+  }
+
+  async function handleCreatePerson(item: ReviewItemSummary) {
+    const draft = newPersonDrafts[item.id] ?? { name: '', idCardLast4: '' }
+    if (!draft.name.trim()) {
+      setError('请先填写新人员姓名。')
+      return
+    }
+
+    setActiveReviewItemId(item.id)
+    setError(null)
+
+    try {
+      await window.qualidex.createPersonFromReview(item.id, {
+        name: draft.name,
+        idCardLast4: draft.idCardLast4,
+        primaryCategory: fieldDrafts[item.id]?.primaryCategory ?? item.primaryCategory,
+        region: fieldDrafts[item.id]?.region ?? item.region,
+      })
+      await loadReviewItems()
+      await loadPersonCandidates()
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : String(nextError))
+    } finally {
+      setActiveReviewItemId(null)
+    }
+  }
+
   return (
     <section className="workspace-panel">
-      <div className="section-heading">
-        <h2>待确认资料</h2>
-        <p>第一版使用卡片式确认，先处理最影响归档和查询可信度的问题。</p>
+      <div className="section-heading inline-heading">
+        <div>
+          <h2>待确认资料</h2>
+          <p>集中处理低置信度、字段缺失和人员归并冲突；确认或忽略都会记录操作日志。</p>
+        </div>
+        <button type="button" className="primary-button" onClick={loadReviewItems} disabled={isLoading}>
+          <CheckCircle2 size={18} />
+          {isLoading ? '刷新中' : '刷新待确认'}
+        </button>
       </div>
-      <div className="review-grid">
-        {reviewItems.map((item) => (
-          <article key={item.id} className="review-card">
-            <span>{item.type}</span>
-            <h3>{item.fileName}</h3>
-            <p>{item.guess}</p>
-            <small>{item.reason}</small>
-            <div className="editable-grid">
-              <label>
-                <span>类别</span>
-                <strong>工程</strong>
-              </label>
-              <label>
-                <span>地区</span>
-                <strong>成都</strong>
-              </label>
-              <label>
-                <span>人员</span>
-                <strong>待选择</strong>
-              </label>
-              <label>
-                <span>资料类型</span>
-                <strong>证书</strong>
-              </label>
-            </div>
-            <div className="workspace-actions">
-              <button type="button" className="primary-button">确认</button>
-              <button type="button" className="ghost-button">跳过</button>
-            </div>
-          </article>
-        ))}
-      </div>
+      {error ? (
+        <div className="risk-note">
+          <AlertTriangle size={18} />
+          {error}
+        </div>
+      ) : null}
+      {items.length > 0 ? (
+        <>
+          <div className="review-summary-row">
+            <strong>{items.length}</strong>
+            <span>条待确认项等待人工处理。当前页面只读展示，不会修改数据库。</span>
+          </div>
+          <div className="review-grid">
+            {items.map((item) => (
+              <article key={item.id} className="review-card">
+                <span>{reviewTypeLabel(item.itemType)}</span>
+                <h3>{item.fileName ?? '未知文件'}</h3>
+                <p>{item.reason ?? '需要人工确认'}</p>
+                <small>{item.sourcePath ?? '未关联原始文件路径'}</small>
+                <div className="editable-grid">
+                  <label>
+                    <span>类别</span>
+                    <select
+                      value={fieldDrafts[item.id]?.primaryCategory ?? ''}
+                      onChange={(event) => updateFieldDraft(item.id, { primaryCategory: event.target.value })}
+                    >
+                      <option value="">待确认</option>
+                      <option value="工程">工程</option>
+                      <option value="消防员">消防员</option>
+                      <option value="其他">其他</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>地区</span>
+                    <input
+                      type="text"
+                      value={fieldDrafts[item.id]?.region ?? ''}
+                      onChange={(event) => updateFieldDraft(item.id, { region: event.target.value })}
+                      placeholder="待确认"
+                    />
+                  </label>
+                  <label>
+                    <span>人员</span>
+                    <select
+                      value={personDrafts[item.id] ?? ''}
+                      onChange={(event) => updatePersonDraft(item.id, event.target.value)}
+                    >
+                      <option value="">待选择</option>
+                      {personCandidates.map((person) => (
+                        <option key={person.id} value={person.id}>
+                          {personCandidateLabel(person)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span>新人员姓名</span>
+                    <input
+                      type="text"
+                      value={newPersonDrafts[item.id]?.name ?? ''}
+                      onChange={(event) => updateNewPersonDraft(item.id, { name: event.target.value })}
+                      placeholder="仅在需要新建时填写"
+                    />
+                  </label>
+                  <label>
+                    <span>身份证后四位</span>
+                    <input
+                      type="text"
+                      value={newPersonDrafts[item.id]?.idCardLast4 ?? ''}
+                      onChange={(event) => updateNewPersonDraft(item.id, { idCardLast4: event.target.value })}
+                      placeholder="可选"
+                      maxLength={4}
+                    />
+                  </label>
+                  <label>
+                    <span>资料类型</span>
+                    <select
+                      value={fieldDrafts[item.id]?.documentType ?? ''}
+                      onChange={(event) => updateFieldDraft(item.id, { documentType: event.target.value })}
+                    >
+                      <option value="">待确认</option>
+                      <option value="id_card">身份证</option>
+                      <option value="diploma">学历</option>
+                      <option value="degree">学位</option>
+                      <option value="license">证书</option>
+                      <option value="other">其他资料</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>证书</span>
+                    <input
+                      type="text"
+                      value={fieldDrafts[item.id]?.licenseName ?? ''}
+                      onChange={(event) => updateFieldDraft(item.id, { licenseName: event.target.value })}
+                      placeholder="待确认"
+                    />
+                  </label>
+                  <label>
+                    <span>认可状态</span>
+                    <select
+                      value={fieldDrafts[item.id]?.licenseRecognitionStatus ?? ''}
+                      onChange={(event) => updateFieldDraft(item.id, { licenseRecognitionStatus: event.target.value })}
+                    >
+                      <option value="">待确认</option>
+                      <option value="suggested">建议认可</option>
+                      <option value="confirmed">已认可</option>
+                      <option value="pending_review">待确认</option>
+                      <option value="rejected">不认可</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>状态</span>
+                    <strong>{valueOrPending(item.status)}</strong>
+                  </label>
+                </div>
+                <div className="review-detail-list">
+                  <p>{item.ocrTextPreview ? `OCR：${item.ocrTextPreview}` : 'OCR：暂无文本预览'}</p>
+                  <p>{item.aiSummary ? `AI：${item.aiSummary}` : 'AI：暂无结构化摘要'}</p>
+                </div>
+                <div className="workspace-actions">
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => void handleSaveReviewFields(item)}
+                    disabled={Boolean(activeReviewItemId)}
+                  >
+                    {activeReviewItemId === item.id ? '保存中' : '保存字段'}
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => void handleReassignPerson(item)}
+                    disabled={Boolean(activeReviewItemId)}
+                  >
+                    {activeReviewItemId === item.id ? '更换中' : '更换人员'}
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => void handleCreatePerson(item)}
+                    disabled={Boolean(activeReviewItemId)}
+                  >
+                    {activeReviewItemId === item.id ? '新建中' : '新建人员'}
+                  </button>
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={() => void handleConfirmReviewItem(item)}
+                    disabled={Boolean(activeReviewItemId)}
+                  >
+                    {activeReviewItemId === item.id ? '确认中' : '确认'}
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => void handleIgnoreReviewItem(item)}
+                    disabled={Boolean(activeReviewItemId)}
+                  >
+                    {activeReviewItemId === item.id ? '处理中' : '忽略'}
+                  </button>
+                  <button type="button" className="ghost-button" disabled>
+                    <Eye size={18} />
+                    查看文件
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className="pending-result import-empty">
+          <h2>{isLoading ? '正在读取待确认资料' : '暂无待确认资料'}</h2>
+          <p>处理 OCR / AI 任务后，低置信度、字段缺失或归并冲突会出现在这里。</p>
+        </div>
+      )}
     </section>
   )
+}
+
+function reviewTypeLabel(itemType: string | null): string {
+  const labels: Record<string, string> = {
+    person_unknown: '人员待确认',
+    person_merge_conflict: '同名归并冲突',
+    primary_category_unknown: '类别待确认',
+    primary_category_conflict: '类别冲突',
+    region_unknown: '地区待确认',
+    document_type_unknown: '资料类型待确认',
+    license_uncertain: '证书待确认',
+    license_recognition_uncertain: '证书识别待确认',
+    education_uncertain: '学历待确认',
+    multi_person_file: '多人员资料',
+    ocr_failed: '文字识别失败',
+    ai_extract_failed: '整理失败',
+    path_ocr_conflict: '路径与识别冲突',
+    path_category_conflict: '路径类别冲突',
+    path_region_conflict: '路径地区冲突',
+    path_person_conflict: '路径人员冲突',
+    ai_uncertain: '识别待确认',
+  }
+
+  return itemType ? labels[itemType] ?? itemType : '待确认'
+}
+
+function valueOrPending(value: string | null): string {
+  return value?.trim() || '待确认'
+}
+
+function createReviewFieldDrafts(items: ReviewItemSummary[]): Record<string, ReviewFieldPatch> {
+  return Object.fromEntries(
+    items.map((item) => [
+      item.id,
+      {
+        primaryCategory: item.primaryCategory ?? '',
+        region: item.region ?? '',
+        documentType: item.documentType ?? '',
+        licenseName: item.licenseName ?? '',
+        licenseRecognitionStatus: item.licenseRecognitionStatus ?? '',
+      },
+    ]),
+  )
+}
+
+function createPersonDrafts(items: ReviewItemSummary[]): Record<string, string> {
+  return Object.fromEntries(items.map((item) => [item.id, item.personId ?? '']))
+}
+
+function createNewPersonDrafts(items: ReviewItemSummary[]): Record<string, NewPersonDraft> {
+  return Object.fromEntries(
+    items.map((item) => [
+      item.id,
+      {
+        name: '',
+        idCardLast4: '',
+      },
+    ]),
+  )
+}
+
+function personCandidateLabel(person: PersonCandidateSummary): string {
+  const identity = person.idCardLast4 ? `_${person.idCardLast4}` : ''
+  const category = person.primaryCategory ?? '未识别类别'
+  const region = person.region ?? '未划分区域'
+  return `${person.name ?? '未知人员'}${identity} / ${category} / ${region} / ${person.documentCount} 份资料`
 }
 
 function ExportWorkspace() {

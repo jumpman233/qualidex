@@ -171,6 +171,64 @@ interface ArchiveWriteResult {
   results: ArchiveWriteItemResult[]
 }
 
+interface ReviewItemSummary {
+  id: string
+  itemType: string | null
+  refId: string | null
+  reason: string | null
+  status: string | null
+  suggestedValue: string | null
+  confirmedValue: string | null
+  fileId: string | null
+  fileName: string | null
+  sourcePath: string | null
+  processStatus: string | null
+  ocrStatus: string | null
+  ocrTextPreview: string | null
+  aiStatus: string | null
+  aiSummary: string | null
+  personId: string | null
+  personName: string | null
+  primaryCategory: string | null
+  region: string | null
+  documentType: string | null
+  licenseName: string | null
+  licenseRecognitionStatus: string | null
+  licenseNeedsReview: boolean
+  createdAt: string | null
+  updatedAt: string | null
+}
+
+interface ReviewItemActionResult {
+  reviewItem: ReviewItemSummary
+  auditLogId: string
+}
+
+interface ReviewFieldPatch {
+  primaryCategory?: string | null
+  region?: string | null
+  documentType?: string | null
+  licenseName?: string | null
+  licenseRecognitionStatus?: string | null
+}
+
+interface PersonCandidateSummary {
+  id: string
+  name: string | null
+  idCardLast4: string | null
+  primaryCategory: string | null
+  region: string | null
+  reviewStatus: string | null
+  documentCount: number
+}
+
+interface CreatePersonFromReviewInput {
+  name: string
+  idCardLast4?: string | null
+  primaryCategory?: string | null
+  region?: string | null
+}
+
 // Used in Renderer process, exposed in `preload.ts`.
 interface Window {
   qualidex: {
@@ -185,5 +243,12 @@ interface Window {
     runProcessingBatch(maxTasks?: number, taskType?: ProcessingTaskType): Promise<ProcessingBatchResult>
     generateArchivePreview(outputRoot: string): Promise<ArchivePreviewResult>
     writeArchive(outputRoot: string): Promise<ArchiveWriteResult>
+    listReviewItems(limit?: number): Promise<ReviewItemSummary[]>
+    confirmReviewItem(reviewItemId: string, confirmedValue?: string | null): Promise<ReviewItemActionResult>
+    ignoreReviewItem(reviewItemId: string, reason?: string | null): Promise<ReviewItemActionResult>
+    updateReviewFields(reviewItemId: string, patch: ReviewFieldPatch): Promise<ReviewItemActionResult>
+    listPersonCandidates(query?: string, limit?: number): Promise<PersonCandidateSummary[]>
+    reassignReviewPerson(reviewItemId: string, personId: string): Promise<ReviewItemActionResult>
+    createPersonFromReview(reviewItemId: string, input: CreatePersonFromReviewInput): Promise<ReviewItemActionResult>
   }
 }

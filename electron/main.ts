@@ -22,6 +22,17 @@ import {
 } from './services/processingWorkerService'
 import { generateArchivePreview } from './services/archivePreviewService'
 import { writeArchiveFromPreview } from './services/archiveWriterService'
+import {
+  confirmReviewItem,
+  createPersonFromReviewItem,
+  ignoreReviewItem,
+  listPersonCandidates,
+  listReviewItems,
+  reassignReviewFilePerson,
+  updateReviewFields,
+  type CreatePersonFromReviewInput,
+  type ReviewFieldPatch,
+} from './services/reviewService'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -137,6 +148,34 @@ ipcMain.handle('archive:preview', async (_event, outputRoot: string) => {
 
 ipcMain.handle('archive:write', async (_event, outputRoot: string) => {
   return writeArchiveFromPreview(getDatabase(), outputRoot)
+})
+
+ipcMain.handle('review:list-items', async (_event, limit?: number) => {
+  return listReviewItems(getDatabase(), limit)
+})
+
+ipcMain.handle('review:confirm-item', async (_event, reviewItemId: string, confirmedValue?: string | null) => {
+  return confirmReviewItem(getDatabase(), reviewItemId, confirmedValue)
+})
+
+ipcMain.handle('review:ignore-item', async (_event, reviewItemId: string, reason?: string | null) => {
+  return ignoreReviewItem(getDatabase(), reviewItemId, reason)
+})
+
+ipcMain.handle('review:update-fields', async (_event, reviewItemId: string, patch: ReviewFieldPatch) => {
+  return updateReviewFields(getDatabase(), reviewItemId, patch)
+})
+
+ipcMain.handle('review:list-person-candidates', async (_event, query?: string, limit?: number) => {
+  return listPersonCandidates(getDatabase(), query, limit)
+})
+
+ipcMain.handle('review:reassign-person', async (_event, reviewItemId: string, personId: string) => {
+  return reassignReviewFilePerson(getDatabase(), reviewItemId, personId)
+})
+
+ipcMain.handle('review:create-person', async (_event, reviewItemId: string, input: CreatePersonFromReviewInput) => {
+  return createPersonFromReviewItem(getDatabase(), reviewItemId, input)
 })
 
 ipcMain.handle('export:recognition-review-excel', async () => {

@@ -34,6 +34,27 @@ contextBridge.exposeInMainWorld('qualidex', {
   writeArchive(outputRoot: string) {
     return ipcRenderer.invoke('archive:write', outputRoot)
   },
+  listReviewItems(limit?: number) {
+    return ipcRenderer.invoke('review:list-items', limit)
+  },
+  confirmReviewItem(reviewItemId: string, confirmedValue?: string | null) {
+    return ipcRenderer.invoke('review:confirm-item', reviewItemId, confirmedValue)
+  },
+  ignoreReviewItem(reviewItemId: string, reason?: string | null) {
+    return ipcRenderer.invoke('review:ignore-item', reviewItemId, reason)
+  },
+  updateReviewFields(reviewItemId: string, patch: unknown) {
+    return ipcRenderer.invoke('review:update-fields', reviewItemId, patch)
+  },
+  listPersonCandidates(query?: string, limit?: number) {
+    return ipcRenderer.invoke('review:list-person-candidates', query, limit)
+  },
+  reassignReviewPerson(reviewItemId: string, personId: string) {
+    return ipcRenderer.invoke('review:reassign-person', reviewItemId, personId)
+  },
+  createPersonFromReview(reviewItemId: string, input: unknown) {
+    return ipcRenderer.invoke('review:create-person', reviewItemId, input)
+  },
   exportRecognitionReviewExcel() {
     return ipcRenderer.invoke('export:recognition-review-excel')
   },

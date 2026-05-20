@@ -1,5 +1,64 @@
 # 工作拆分
 
+## 当前完成状态（2026-05-20）
+
+> 本段用于换号或恢复上下文时快速接续。详细交接见 [work-breakdown-handoff.md](./work-breakdown-handoff.md)。
+
+### 已完成
+
+- P0 样本验证闭环已完成：Electron + React + TypeScript 桌面壳、目录选择与递归扫描、hash 去重、SQLite 基础表、OCR / PDF 文本提取、AI 结构化抽取、简单 Excel 人工验收导出。
+- P1-0 页面 UI 蓝图已完成：按照 `docs/ui/ui.png` 和 `docs/ui/design-require.md` 实现了单页工作台的 `home / search / import / review / export` 首版页面状态。
+- P1-A 导入批次能力已完成：支持导入批次、新增目录导入、目录重新扫描、批次重新扫描，并保留原始资料只读规则。
+- P1-B OCR / AI 任务队列已完成：建立 `processing_tasks`，导入后创建 OCR 任务，worker 可串行处理 OCR 与 AI 抽取任务，并记录状态、失败与跳过。
+- P1-C 人员归并与结构化识别已完成：支持按姓名、身份证后四位、地区、主类别进行确定性归并；冲突、低置信度、未知字段进入 `review_items`。
+- P1-D 标准归档预览与安全复制已完成：支持归档目标路径预览、待确认/冲突项跳过、安全复制到输出目录；不会移动、删除或覆盖原始资料。
+- P1-E-1 前端导入与处理队列接入已完成：导入页已接真实 IPC，支持选择目录、导入资料、刷新任务、处理 10 个队列任务、展示导入与队列状态。
+- P1-E-2 待确认真实列表只读接入已完成：待确认页已接 `review_items` 真实数据，支持刷新、空状态、错误状态、OCR / AI 摘要与人员/类别/地区/资料类型建议展示；确认、忽略、编辑仍为占位。
+- P1-E-3 待确认项确认 / 忽略动作已完成：支持单条确认或忽略，更新 `review_items`，写入 `audit_logs`，并标记关联人员 `archive_dirty`。
+- P1-E-4 待确认字段编辑已完成：支持修改主类别、地区、资料类型，写入 `people / person_documents / licenses`，记录 `audit_logs`，并标记关联人员 `archive_dirty`。
+- P1-E-5 待确认人员切换已完成：支持列出已有人员候选，并把待确认文件关联到已有人员；同步更新资料关联和证书人员，写入 `audit_logs`，标记新旧人员 `archive_dirty`。
+- P1-E-6 待确认证书字段编辑已完成：支持修改证书名称、证书认可状态，写入 `licenses`，记录 `audit_logs`，并标记关联人员 `archive_dirty`。
+- P1-E-7 待确认新建人员已完成：支持从待确认项新建人员，并把当前文件的资料关联和证书关联绑定到新人员；保留原始资料只读规则。
+
+### 进行中
+
+- 暂无。P1-E 当前拆分项已完成。
+
+### 暂缓 / 未开始
+
+- 人员合并 / 拆分的交互与落库。
+- 查询页真实条件解析、SQL 查询、证书候选确认。
+- 完整导出：查询结果 Excel、人员资料文件夹导出、export_jobs。
+- 回收站、软删除恢复、归档输出清理。
+- 单测与 E2E；当前已为未来验证脚本和主链路留出空间。
+
+### 当前验证情况
+
+- 已通过：`pnpm run verify:import-batches`
+- 已通过：`pnpm run verify:processing-worker`
+- 已通过：`pnpm run verify:archive-preview`
+- 已通过：`pnpm run verify:archive-write`
+- 已通过：`pnpm run verify:structured-recognition`
+- 已通过：`pnpm run verify:processing-worker-ai-success`
+- 已通过：`pnpm run verify:review-list`
+- 已通过：`pnpm run verify:review-actions`
+- 已通过：`pnpm run verify:review-field-update`
+- 已通过：`pnpm run verify:review-license-update`
+- 已通过：`pnpm run verify:review-person-reassign`
+- 已通过：`pnpm run verify:review-create-person`
+- 已通过：`pnpm run lint`
+- 已通过：`pnpm run build`
+- 暂不建议运行：`pnpm run verify:db`。该脚本会触发 `electron-rebuild`，在当前机器缺少 Visual Studio C++ 构建环境时可能破坏 `better-sqlite3` 的 Electron native binding。
+
+### Native binding 注意事项
+
+如果资料扫描时报 `better-sqlite3.node was compiled against a different Node.js version`，在以下目录执行恢复命令：
+
+```powershell
+cd E:\code\Work\qualidex\node_modules\.pnpm\better-sqlite3@12.10.0\node_modules\better-sqlite3
+pnpm exec prebuild-install --runtime=electron --target=30.0.1 --dist-url=https://electronjs.org/headers
+```
+
 来源：[prd.md](./prd.md)
 
 本文只做开发工作拆分，不开始执行实现。

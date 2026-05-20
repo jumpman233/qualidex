@@ -22,6 +22,12 @@
     "verify:structured-recognition": "node scripts/verify-structured-recognition.mjs",
     "verify:archive-preview": "node scripts/verify-archive-preview.mjs",
     "verify:archive-write": "node scripts/verify-archive-write.mjs",
+    "verify:review-list": "node scripts/verify-review-list.mjs",
+    "verify:review-actions": "node scripts/verify-review-actions.mjs",
+    "verify:review-field-update": "node scripts/verify-review-field-update.mjs",
+    "verify:review-license-update": "node scripts/verify-review-license-update.mjs",
+    "verify:review-create-person": "node scripts/verify-review-create-person.mjs",
+    "verify:review-person-reassign": "node scripts/verify-review-person-reassign.mjs",
     "verify:db": "pnpm run rebuild:native && node scripts/verify-db.mjs"
   },
   "dependencies": {
