@@ -56,6 +56,7 @@ async function createFixture() {
   await writeFile(path.join(tempSourceRoot, 'review.pdf'), 'review source', 'utf8')
   await writeFile(path.join(tempSourceRoot, 'dup.pdf'), 'dup source', 'utf8')
   await writeFile(path.join(tempSourceRoot, 'existing.pdf'), 'existing source', 'utf8')
+  await writeFile(path.join(tempSourceRoot, 'multi.pdf'), 'multi source', 'utf8')
   await mkdir(path.join(tempOutputRoot, '工程', '成都', '张三_1234', '03_证书资料'), { recursive: true })
   await writeFile(
     path.join(tempOutputRoot, '工程', '成都', '张三_1234', '03_证书资料', 'existing.pdf'),
@@ -112,8 +113,8 @@ app.whenReady().then(async () => {
       seedDatabase(db);
       const result = await writeArchiveFromPreview(db, ${JSON.stringify(tempOutputRoot)});
 
-      assertEqual(result.totalItems, 5, 'write item count');
-      assertEqual(result.copiedItems, 1, 'copied item count');
+      assertEqual(result.totalItems, 6, 'write item count');
+      assertEqual(result.copiedItems, 2, 'copied item count');
       assertEqual(result.skippedReviewItems, 1, 'skipped review count');
       assertEqual(result.skippedConflictItems, 2, 'skipped conflict count');
       assertEqual(result.skippedExistingItems, 1, 'skipped existing count');
@@ -122,6 +123,9 @@ app.whenReady().then(async () => {
       const copiedPath = path.join(${JSON.stringify(tempOutputRoot)}, '工程', '成都', '张三_1234', '03_证书资料', 'safe.pdf');
       assert(existsSync(copiedPath), 'safe file copied');
       assertEqual(readFileSync(copiedPath, 'utf8'), 'safe source', 'copied file content');
+      const multiPath = path.join(${JSON.stringify(tempOutputRoot)}, '工程', '成都', '_多人员资料', '多人员资料_multi', 'multi.pdf');
+      assert(existsSync(multiPath), 'multi-person file copied once');
+      assertEqual(readFileSync(multiPath, 'utf8'), 'multi source', 'multi copied file content');
 
       const reviewTarget = path.join(${JSON.stringify(tempOutputRoot)}, '工程', '成都', '张三_1234', '99_待确认', 'review.pdf');
       assert(!existsSync(reviewTarget), 'review file skipped');
@@ -133,13 +137,18 @@ app.whenReady().then(async () => {
       assertEqual(readFileSync(existingTarget, 'utf8'), 'existing target', 'existing target not overwritten');
 
       const safeDoc = db.prepare("select target_path from person_documents where file_id = 'file-safe'").get();
+      const multiDocs = db.prepare("select target_path from person_documents where file_id = 'file-multi' order by id").all();
       const reviewDoc = db.prepare("select target_path from person_documents where file_id = 'file-review'").get();
       const safeFile = db.prepare("select archive_status from files where id = 'file-safe'").get();
+      const multiFile = db.prepare("select archive_status from files where id = 'file-multi'").get();
       const reviewFile = db.prepare("select archive_status from files where id = 'file-review'").get();
 
       assertEqual(safeDoc.target_path, copiedPath, 'safe document target path');
+      assertEqual(multiDocs.length, 2, 'multi document target rows');
+      assert(multiDocs.every((row) => row.target_path === multiPath), 'multi document target paths');
       assertEqual(reviewDoc.target_path, null, 'review document target path untouched');
       assertEqual(safeFile.archive_status, 'archived', 'safe file archive status');
+      assertEqual(multiFile.archive_status, 'archived', 'multi file archive status');
       assertEqual(reviewFile.archive_status, 'pending', 'review file archive status');
       assert(existsSync(${JSON.stringify(path.join(tempSourceRoot, 'safe.pdf'))}), 'original safe source remains');
       assertEqual(readFileSync(${JSON.stringify(path.join(tempSourceRoot, 'safe.pdf'))}, 'utf8'), 'safe source', 'original source content unchanged');
@@ -158,16 +167,20 @@ app.whenReady().then(async () => {
 
 function seedDatabase(db) {
   insertPerson(db, 'person-1', '张三', '1234', '工程', '成都', 'suggested');
+  insertPerson(db, 'person-2', '李四', '5678', '工程', '成都', 'suggested');
   insertFile(db, 'file-safe', 'safe.pdf', 'safe source');
   insertFile(db, 'file-review', 'review.pdf', 'review source');
   insertFile(db, 'file-dup-a', 'dup.pdf', 'dup source');
   insertFile(db, 'file-dup-b', 'dup.pdf', 'dup source');
   insertFile(db, 'file-existing', 'existing.pdf', 'existing source');
+  insertFile(db, 'file-multi', 'multi.pdf', 'multi source', 1);
   insertDocument(db, 'doc-safe', 'file-safe', 0, null);
   insertDocument(db, 'doc-review', 'file-review', 1, '证书识别需要确认');
   insertDocument(db, 'doc-dup-a', 'file-dup-a', 0, null);
   insertDocument(db, 'doc-dup-b', 'file-dup-b', 0, null);
   insertDocument(db, 'doc-existing', 'file-existing', 0, null);
+  insertDocument(db, 'doc-multi-a', 'file-multi', 0, null, 'multi_person');
+  insertDocument(db, 'doc-multi-b', 'file-multi', 0, null, 'multi_person', 'person-2');
   insertLicense(db, 'license-safe', 'file-safe', 0, 'suggested');
   insertLicense(db, 'license-existing', 'file-existing', 0, 'suggested');
 }
@@ -183,18 +196,21 @@ function insertPerson(db, id, name, idCardLast4, primaryCategory, region, review
   });
 }
 
-function insertFile(db, id, fileName) {
-  db.prepare("insert into files (id, original_path, file_name, process_status, archive_status, is_multi_person_file, created_at, updated_at) values (@id, @originalPath, @fileName, 'ai_extracted', 'pending', 0, 'now', 'now')").run({
+function insertFile(db, id, fileName, _content, isMultiPersonFile = 0) {
+  db.prepare("insert into files (id, original_path, file_name, process_status, archive_status, is_multi_person_file, created_at, updated_at) values (@id, @originalPath, @fileName, 'ai_extracted', 'pending', @isMultiPersonFile, 'now', 'now')").run({
     id,
     originalPath: path.join(${JSON.stringify(tempSourceRoot)}, fileName),
     fileName,
+    isMultiPersonFile,
   });
 }
 
-function insertDocument(db, id, fileId, needsReview, reviewReason) {
-  db.prepare("insert into person_documents (id, person_id, file_id, document_type, target_category, relation_type, confidence, needs_review, review_reason, status, created_at, updated_at) values (@id, 'person-1', @fileId, 'license', '工程', 'primary', 0.9, @needsReview, @reviewReason, 'active', 'now', 'now')").run({
+function insertDocument(db, id, fileId, needsReview, reviewReason, relationType = 'primary', personId = 'person-1') {
+  db.prepare("insert into person_documents (id, person_id, file_id, document_type, target_category, relation_type, confidence, needs_review, review_reason, status, created_at, updated_at) values (@id, @personId, @fileId, 'license', '工程', @relationType, 0.9, @needsReview, @reviewReason, 'active', 'now', 'now')").run({
     id,
+    personId,
     fileId,
+    relationType,
     needsReview,
     reviewReason,
   });

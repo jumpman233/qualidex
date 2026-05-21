@@ -48,6 +48,12 @@ interface FolderMergeContext {
   resultJson: string | null
 }
 
+interface MultiPersonCandidate {
+  name: string | null
+  idCardLast4: string | null
+  maskedDisplay: string | null
+}
+
 const CONFIDENCE_REVIEW_THRESHOLD = 0.8
 
 export function persistStructuredRecognition(
@@ -70,6 +76,7 @@ export function persistStructuredRecognition(
   const licenseIds = personMatch.person
     ? insertLicenses(db, input, result, personMatch.person.id, reviewReasons, now)
     : []
+  upsertMultiPersonAssociations(db, input.fileId, result, personMatch.person, localIdCards, reviewReasons, now)
 
   recordFolderMergeContext(db, input.fileId, folderMergeContext, now)
 
@@ -186,6 +193,132 @@ function resolvePerson(
   }
 
   return { person: createPerson(db, result, localIdCard, now, reviewStatusForResult(result)), strategy: 'created' }
+}
+
+function upsertMultiPersonAssociations(
+  db: Database.Database,
+  fileId: string,
+  result: AiExtractionResult,
+  primaryPerson: PersonRow | null,
+  localIdCards: NormalizedIdCard[],
+  reviewReasons: string[],
+  now: string,
+): void {
+  if (!result.multi_person.is_multi_person_file) {
+    return
+  }
+
+  const candidates = collectMultiPersonCandidates(result)
+  for (const candidate of candidates) {
+    const localIdCard = findLocalIdCardForCandidate(candidate, localIdCards)
+    const candidateResult = createCandidateResult(result, candidate)
+    const person = resolveMultiPersonCandidate(db, candidateResult, localIdCard, primaryPerson, now)
+
+    if (!person) {
+      continue
+    }
+
+    upsertPersonDocument(db, fileId, person.id, candidateResult, reviewReasons, now)
+  }
+}
+
+function collectMultiPersonCandidates(result: AiExtractionResult): MultiPersonCandidate[] {
+  const candidates: MultiPersonCandidate[] = []
+  const addCandidate = (candidate: MultiPersonCandidate) => {
+    const key = [
+      candidate.name ?? '',
+      candidate.idCardLast4 ?? '',
+      candidate.maskedDisplay ?? '',
+    ].join('|')
+    if (!key.replace(/\|/g, '').trim()) {
+      return
+    }
+    if (!candidates.some((existing) => [
+      existing.name ?? '',
+      existing.idCardLast4 ?? '',
+      existing.maskedDisplay ?? '',
+    ].join('|') === key)) {
+      candidates.push(candidate)
+    }
+  }
+
+  addCandidate({
+    name: result.person.name,
+    idCardLast4: result.person.id_card_last4,
+    maskedDisplay: result.person.masked_display,
+  })
+  for (const person of result.multi_person.detected_people) {
+    addCandidate({
+      name: person.name,
+      idCardLast4: person.id_card_last4,
+      maskedDisplay: person.masked_display,
+    })
+  }
+
+  return candidates
+}
+
+function findLocalIdCardForCandidate(
+  candidate: MultiPersonCandidate,
+  localIdCards: NormalizedIdCard[],
+): NormalizedIdCard | null {
+  if (!candidate.idCardLast4) {
+    return null
+  }
+
+  const matches = localIdCards.filter((idCard) => idCard.idCardLast4 === candidate.idCardLast4)
+  return matches.length === 1 ? matches[0] : null
+}
+
+function createCandidateResult(
+  result: AiExtractionResult,
+  candidate: MultiPersonCandidate,
+): AiExtractionResult {
+  return {
+    ...result,
+    person: {
+      name: candidate.name,
+      id_card_last4: candidate.idCardLast4,
+      masked_display: candidate.maskedDisplay,
+    },
+  }
+}
+
+function resolveMultiPersonCandidate(
+  db: Database.Database,
+  result: AiExtractionResult,
+  localIdCard: NormalizedIdCard | null,
+  primaryPerson: PersonRow | null,
+  now: string,
+): PersonRow | null {
+  if (primaryPerson && isSameCandidatePerson(primaryPerson, result, localIdCard)) {
+    return primaryPerson
+  }
+
+  const resolved = resolvePerson(db, result, localIdCard, null, now)
+  if (resolved.person) {
+    return resolved.person
+  }
+
+  if (!result.person.name && !localIdCard) {
+    return null
+  }
+
+  return createPerson(db, result, localIdCard, now, 'pending_review')
+}
+
+function isSameCandidatePerson(
+  person: PersonRow,
+  result: AiExtractionResult,
+  localIdCard: NormalizedIdCard | null,
+): boolean {
+  if (localIdCard && person.id_card_number === localIdCard.idCardNumber) {
+    return true
+  }
+
+  const name = result.person.name?.trim() || null
+  const last4 = localIdCard?.idCardLast4 ?? result.person.id_card_last4
+  return Boolean(name && person.name === name && (!last4 || person.id_card_last4 === last4))
 }
 
 function isFolderAnchorCompatible(name: string | null, anchorPerson: PersonRow): boolean {

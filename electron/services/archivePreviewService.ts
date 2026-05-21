@@ -62,7 +62,7 @@ export function generateArchivePreview(
 ): ArchivePreviewResult {
   const resolvedOutputRoot = path.resolve(outputRoot)
   const rows = readArchivePreviewRows(db)
-  const items = rows.map((row) => buildPreviewItem(row, resolvedOutputRoot))
+  const items = compactMultiPersonItems(rows.map((row) => buildPreviewItem(row, resolvedOutputRoot)))
 
   markTargetConflicts(items)
 
@@ -73,6 +73,32 @@ export function generateArchivePreview(
     reviewItems: items.filter((item) => item.needsReview).length,
     items,
   }
+}
+
+function compactMultiPersonItems(items: ArchivePreviewItem[]): ArchivePreviewItem[] {
+  const compacted: ArchivePreviewItem[] = []
+  const multiPersonByFileId = new Map<string, ArchivePreviewItem>()
+
+  for (const item of items) {
+    if (!item.isMultiPersonFile) {
+      compacted.push(item)
+      continue
+    }
+
+    const existing = multiPersonByFileId.get(item.fileId)
+    if (!existing) {
+      multiPersonByFileId.set(item.fileId, item)
+      compacted.push(item)
+      continue
+    }
+
+    existing.reviewReasons = uniqueValues([...existing.reviewReasons, ...item.reviewReasons, '多人员资料涉及多个人员'])
+    existing.needsReview = existing.needsReview || item.needsReview
+    existing.hasConflict = existing.hasConflict || item.hasConflict
+    existing.conflictReason = existing.conflictReason ?? item.conflictReason
+  }
+
+  return compacted
 }
 
 function readArchivePreviewRows(db: Database.Database): ArchivePreviewRow[] {
@@ -192,10 +218,6 @@ function collectReviewReasons(row: ArchivePreviewRow): string[] {
   if (!row.document_type || row.document_type === 'unknown') {
     reasons.add('资料类型未知')
   }
-  if (row.file_is_multi_person_file || row.document_relation_type === 'multi_person') {
-    reasons.add('多人员资料')
-  }
-
   return [...reasons]
 }
 
@@ -251,6 +273,10 @@ function markTargetConflicts(items: ArchivePreviewItem[]): void {
       }
     }
   }
+}
+
+function uniqueValues(values: string[]): string[] {
+  return [...new Set(values)]
 }
 
 function sanitizePathSegment(value: string): string {

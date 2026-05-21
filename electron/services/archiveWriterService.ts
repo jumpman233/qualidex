@@ -113,13 +113,14 @@ function markArchived(db: Database.Database, item: ArchivePreviewItem): void {
       target_path = @targetPath,
       updated_at = @updatedAt
     WHERE file_id = @fileId
-      AND (@personId IS NULL OR person_id = @personId)
+      AND (@isMultiPersonFile = 1 OR @personId IS NULL OR person_id = @personId)
       AND status = 'active'
   `).run({
     targetPath: item.targetPath,
     updatedAt: now,
     fileId: item.fileId,
     personId: item.personId,
+    isMultiPersonFile: item.isMultiPersonFile ? 1 : 0,
   })
 
   db.prepare(`

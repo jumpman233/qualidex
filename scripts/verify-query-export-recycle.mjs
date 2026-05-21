@@ -101,6 +101,7 @@ app.whenReady().then(async () => {
       mkdirSync(cleanupRoot, { recursive: true });
       writeFileSync(path.join(sourceRoot, 'zhangsan-license.txt'), 'license');
       writeFileSync(path.join(sourceRoot, 'lisi-license.txt'), 'pending license');
+      writeFileSync(path.join(sourceRoot, 'multi-person.pdf'), 'multi source');
       writeFileSync(path.join(cleanupRoot, 'copy.txt'), 'generated copy');
 
       seedDatabase(db, sourceRoot);
@@ -116,7 +117,7 @@ app.whenReady().then(async () => {
       assertEqual(results[0].maskedDisplay, '1101**********1234', 'query masked id card');
       assert(results[0].licenseNames.includes('二级建造师'), 'query includes first license');
       assert(results[0].licenseNames.includes('安全员证'), 'query includes second license');
-      assertEqual(results[0].documentCount, 1, 'query document count');
+      assertEqual(results[0].documentCount, 2, 'query document count');
 
       const pendingExcluded = queryPeople(db, { categories: ['工程'], includePendingReview: false });
       assert(!pendingExcluded.some((person) => person.name === '李四'), 'pending person excluded');
@@ -141,11 +142,17 @@ app.whenReady().then(async () => {
       assertEqual(JSON.parse(fullExportLog.parsed_conditions).export_full_id_card, true, 'full id export flag logged');
 
       const filesResult = await exportQueryResultFiles(db, { categories: ['工程'] }, outputRoot);
-      assertEqual(filesResult.copiedItems, 1, 'files copied count');
-      assert(filesResult.results[0].targetPath.startsWith(outputRoot), 'files copied inside output root');
-      assert(filesResult.results[0].targetPath.includes('张三_1234'), 'file export folder uses name and last4');
-      assert(!filesResult.results[0].targetPath.includes('110101199003071234'), 'file export path does not expose full id card');
-      assert(existsSync(filesResult.results[0].targetPath), 'copied file exists');
+      assertEqual(filesResult.copiedItems, 2, 'files copied count');
+      const normalExport = filesResult.results.find((item) => item.fileId === 'file-1');
+      assert(normalExport, 'normal export item exists');
+      assert(normalExport.targetPath.startsWith(outputRoot), 'files copied inside output root');
+      assert(normalExport.targetPath.includes('张三_1234'), 'file export folder uses name and last4');
+      assert(!normalExport.targetPath.includes('110101199003071234'), 'file export path does not expose full id card');
+      assert(existsSync(normalExport.targetPath), 'copied file exists');
+      const multiExport = filesResult.results.find((item) => item.fileId === 'file-3');
+      assert(multiExport, 'multi-person export item exists');
+      assert(multiExport.targetPath.includes('_多人员资料'), 'multi-person export uses shared folder');
+      assert(!multiExport.targetPath.includes('张三_1234'), 'multi-person export is not copied into person folder');
 
       const exportJobs = db.prepare('select count(*) as count from export_jobs').get();
       assertEqual(exportJobs.count, 3, 'export jobs recorded');
@@ -195,10 +202,13 @@ app.whenReady().then(async () => {
 function seedDatabase(db, sourceRoot) {
   db.prepare("insert into files (id, original_path, file_name, ocr_status, process_status, archive_status, created_at, updated_at) values ('file-1', @path, 'zhangsan-license.txt', 'text_extracted', 'completed', 'pending', 'now', 'now')").run({ path: path.join(sourceRoot, 'zhangsan-license.txt') });
   db.prepare("insert into files (id, original_path, file_name, ocr_status, process_status, archive_status, created_at, updated_at) values ('file-2', @path, 'lisi-license.txt', 'text_extracted', 'needs_review', 'pending', 'now', 'now')").run({ path: path.join(sourceRoot, 'lisi-license.txt') });
+  db.prepare("insert into files (id, original_path, file_name, ocr_status, process_status, archive_status, is_multi_person_file, created_at, updated_at) values ('file-3', @path, 'multi-person.pdf', 'text_extracted', 'completed', 'pending', 1, 'now', 'now')").run({ path: path.join(sourceRoot, 'multi-person.pdf') });
   db.prepare("insert into people (id, name, id_card_number, id_card_last4, masked_display, primary_category, region, education_level, review_status, status, archive_dirty, created_at, updated_at) values ('person-1', '张三', '110101199003071234', '1234', '1101**********1234', '工程', '成都', 'college', 'confirmed', 'active', 0, 'now', 'now')").run();
   db.prepare("insert into people (id, name, id_card_number, id_card_last4, masked_display, primary_category, region, education_level, review_status, status, archive_dirty, created_at, updated_at) values ('person-2', '李四', '110101199105065678', '5678', '1101**********5678', '工程', '成都', 'bachelor', 'pending_review', 'active', 0, 'now', 'now')").run();
   db.prepare("insert into person_documents (id, person_id, file_id, document_type, target_category, relation_type, confidence, needs_review, status, created_at, updated_at) values ('doc-1', 'person-1', 'file-1', 'license', '工程', 'primary', 1, 0, 'active', 'now', 'now')").run();
   db.prepare("insert into person_documents (id, person_id, file_id, document_type, target_category, relation_type, confidence, needs_review, status, created_at, updated_at) values ('doc-2', 'person-2', 'file-2', 'license', '工程', 'primary', 0.5, 1, 'active', 'now', 'now')").run();
+  db.prepare("insert into person_documents (id, person_id, file_id, document_type, target_category, relation_type, confidence, needs_review, status, created_at, updated_at) values ('doc-3a', 'person-1', 'file-3', 'license', '工程', 'multi_person', 1, 0, 'active', 'now', 'now')").run();
+  db.prepare("insert into person_documents (id, person_id, file_id, document_type, target_category, relation_type, confidence, needs_review, status, created_at, updated_at) values ('doc-3b', 'person-2', 'file-3', 'license', '工程', 'multi_person', 1, 0, 'active', 'now', 'now')").run();
   db.prepare("insert into licenses (id, person_id, file_id, primary_category, region, raw_license_name, normalized_license_name, recognition_status, needs_review, status, created_at, updated_at) values ('license-1', 'person-1', 'file-1', '工程', '成都', '二级建造师', '二级建造师', 'confirmed', 0, 'active', 'now', 'now')").run();
   db.prepare("insert into licenses (id, person_id, file_id, primary_category, region, raw_license_name, normalized_license_name, recognition_status, needs_review, status, created_at, updated_at) values ('license-1b', 'person-1', 'file-1', '工程', '成都', '安全员证', '安全员证', 'confirmed', 0, 'active', 'now', 'now')").run();
   db.prepare("insert into licenses (id, person_id, file_id, primary_category, region, raw_license_name, normalized_license_name, recognition_status, needs_review, status, created_at, updated_at) values ('license-2', 'person-2', 'file-2', '工程', '成都', '二级建造师', '二级建造师', 'pending_review', 1, 'active', 'now', 'now')").run();

@@ -118,6 +118,7 @@ app.whenReady().then(async () => {
       assert(unknownRegion.reviewReasons.includes('地区未知'), 'unknown region review reason');
 
       const multi = findByFile(preview, 'multi.pdf');
+      assertEqual(preview.items.filter((item) => item.fileId === 'file-3').length, 1, 'multi file appears once');
       assertIncludes(multi.targetRelativePath, path.join('消防员', '绵阳', '_多人员资料', '多人员资料_multi', 'multi.pdf'), 'multi target');
       assertEqual(multi.isMultiPersonFile, true, 'multi flag');
       assert(multi.reviewReasons.includes('多人员资料'), 'multi review reason');
@@ -149,6 +150,7 @@ function seedDatabase(db) {
   insertPerson(db, 'person-1', '张三', '1234', '工程', '成都', 'suggested');
   insertPerson(db, 'person-5', '王五', null, '工程', null, 'pending_review');
   insertPerson(db, 'person-6', '钱七', '5566', '消防员', '绵阳', 'pending_review');
+  insertPerson(db, 'person-7', '孙八', '7788', '消防员', '绵阳', 'pending_review');
   insertFile(db, 'file-1', 'zhangsan-license.pdf', 0, 'ai_extracted');
   insertFile(db, 'file-2', 'wangwu-license.pdf', 0, 'needs_review');
   insertFile(db, 'file-3', 'multi.pdf', 1, 'needs_review');
@@ -158,6 +160,7 @@ function seedDatabase(db) {
   insertDocument(db, 'doc-1', 'person-1', 'file-1', 'license', '工程', 'primary', 0, null);
   insertDocument(db, 'doc-2', 'person-5', 'file-2', 'license', '工程', 'primary', 1, '地区未知');
   insertDocument(db, 'doc-3', 'person-6', 'file-3', 'license', '消防员', 'multi_person', 1, '多人员资料');
+  insertDocument(db, 'doc-3b', 'person-7', 'file-3', 'license', '消防员', 'multi_person', 1, '多人员资料');
   insertDocument(db, 'doc-4', null, 'file-4', 'unknown', null, 'primary', 1, '资料类型未知');
   insertDocument(db, 'doc-5', 'person-1', 'file-5', 'license', '工程', 'primary', 0, null);
   insertDocument(db, 'doc-6', 'person-1', 'file-6', 'license', '工程', 'primary', 0, null);

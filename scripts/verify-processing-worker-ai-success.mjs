@@ -157,8 +157,8 @@ app.whenReady().then(async () => {
       const reviewItems = db.prepare('select count(*) as count from review_items').get().count;
 
       assertEqual(aiResults, 2, 'AI result count');
-      assertEqual(people, 2, 'people count');
-      assertEqual(documents, 2, 'person document count');
+      assertEqual(people, 3, 'people count');
+      assertEqual(documents, 3, 'person document count');
       assertEqual(licenses, 2, 'license count');
       assert(reviewItems >= 4, 'review item count for multi-person and low confidence');
 
@@ -182,6 +182,8 @@ app.whenReady().then(async () => {
       assertEqual(multiDoc.relation_type, 'multi_person', 'multi-person relation type');
       assertEqual(multiDoc.needs_review, 1, 'multi-person document review flag');
       assert(String(multiDoc.review_reason).includes('多人'), 'multi-person review reason');
+      const multiPeople = db.prepare("select people.name from person_documents inner join people on people.id = person_documents.person_id where person_documents.file_id = (select id from files where file_name = 'multi-person.txt') order by people.name").all().map((row) => row.name);
+      assertEqual(multiPeople.join(','), '李四,王五', 'multi-person linked people');
 
       const multiLicense = db.prepare("select recognition_status, needs_review, issuer_authority_review_status from licenses where normalized_license_name = '消防员证书'").get();
       assertEqual(multiLicense.recognition_status, 'pending_review', 'multi license recognition status');

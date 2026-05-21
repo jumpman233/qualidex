@@ -56,6 +56,8 @@ interface PersonFileExportRow {
   file_name: string
   original_path: string
   document_type: string | null
+  relation_type: string | null
+  is_multi_person_file: number | null
 }
 
 interface RecognitionReviewRow {
@@ -203,7 +205,7 @@ export async function exportQueryResultFiles(
   const normalizedConditions = normalizeConditions(conditions)
   const people = queryPeople(db, normalizedConditions)
   const selectedPeople = people.map((person) => person.personId)
-  const rows = selectedPeople.length > 0 ? readPersonFiles(db, selectedPeople) : []
+  const rows = selectedPeople.length > 0 ? compactMultiPersonExportRows(readPersonFiles(db, selectedPeople)) : []
   const resolvedOutputRoot = path.resolve(outputRoot)
   const results: QueryFilesExportItem[] = []
 
@@ -350,7 +352,9 @@ function readPersonFiles(db: Database.Database, personIds: string[]): PersonFile
       files.id AS file_id,
       files.file_name,
       files.original_path,
-      person_documents.document_type
+      files.is_multi_person_file,
+      person_documents.document_type,
+      person_documents.relation_type
     FROM person_documents
     INNER JOIN people ON people.id = person_documents.person_id
     INNER JOIN files ON files.id = person_documents.file_id
@@ -370,9 +374,45 @@ function readPersonFiles(db: Database.Database, personIds: string[]): PersonFile
 function buildExportTargetPath(outputRoot: string, row: PersonFileExportRow): string {
   const category = sanitizePathSegment(row.primary_category ?? '未识别类别')
   const region = sanitizePathSegment(row.region ?? '未划分区域')
+  if (isMultiPersonExportRow(row)) {
+    return path.join(
+      outputRoot,
+      category,
+      region,
+      '_多人员资料',
+      sanitizePathSegment(`多人员资料_${stripExtension(row.file_name)}`),
+      sanitizePathSegment(row.file_name),
+    )
+  }
+
   const person = resolveExportPersonFolder(row)
   const folder = sanitizePathSegment(documentTypeLabel(row.document_type))
   return path.join(outputRoot, category, region, person, folder, sanitizePathSegment(row.file_name))
+}
+
+function compactMultiPersonExportRows(rows: PersonFileExportRow[]): PersonFileExportRow[] {
+  const compacted: PersonFileExportRow[] = []
+  const multiPersonFileIds = new Set<string>()
+
+  for (const row of rows) {
+    if (!isMultiPersonExportRow(row)) {
+      compacted.push(row)
+      continue
+    }
+
+    if (multiPersonFileIds.has(row.file_id)) {
+      continue
+    }
+
+    multiPersonFileIds.add(row.file_id)
+    compacted.push(row)
+  }
+
+  return compacted
+}
+
+function isMultiPersonExportRow(row: PersonFileExportRow): boolean {
+  return Boolean(row.is_multi_person_file) || row.relation_type === 'multi_person'
 }
 
 function resolveExportPersonFolder(row: PersonFileExportRow): string {
@@ -490,6 +530,10 @@ function sanitizePathSegment(value: string): string {
     .join('')
     .trim()
   return sanitized || '未命名'
+}
+
+function stripExtension(fileName: string): string {
+  return fileName.slice(0, fileName.length - path.extname(fileName).length) || fileName
 }
 
 function stablePersonNumber(personId: string): string {
