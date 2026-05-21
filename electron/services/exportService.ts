@@ -22,6 +22,10 @@ export interface QueryResultsExcelExportResult {
   rowCount: number
 }
 
+export interface QueryResultsExcelExportOptions {
+  exportFullIdCard?: boolean
+}
+
 export interface QueryFilesExportItem {
   personId: string
   fileId: string
@@ -45,6 +49,7 @@ export interface QueryFilesExportResult {
 interface PersonFileExportRow {
   person_id: string
   person_name: string | null
+  id_card_last4: string | null
   primary_category: string | null
   region: string | null
   file_id: string
@@ -151,10 +156,12 @@ export function exportQueryResultsExcel(
   db: Database.Database,
   conditions: QueryPeopleConditions,
   outputPath: string,
+  options: QueryResultsExcelExportOptions = {},
 ): QueryResultsExcelExportResult {
   const normalizedConditions = normalizeConditions(conditions)
+  const normalizedOptions = normalizeQueryResultsExcelExportOptions(options)
   const rows = queryPeople(db, normalizedConditions)
-  const worksheet = utils.json_to_sheet(rows.map(toQueryWorksheetRow))
+  const worksheet = utils.json_to_sheet(rows.map((row) => toQueryWorksheetRow(row, normalizedOptions)))
   worksheet['!cols'] = [
     { wch: 18 },
     { wch: 14 },
@@ -174,6 +181,7 @@ export function exportQueryResultsExcel(
 
   const exportJobId = insertExportJob(db, {
     conditions: normalizedConditions,
+    exportFullIdCard: normalizedOptions.exportFullIdCard,
     selectedPeople: rows.map((row) => row.personId),
     outputType: 'query_excel',
     outputPath,
@@ -311,9 +319,15 @@ function toWorksheetRow(row: RecognitionReviewRow): Record<string, string | numb
   }
 }
 
-function toQueryWorksheetRow(row: QueryPersonResult): Record<string, string | number> {
+function toQueryWorksheetRow(
+  row: QueryPersonResult,
+  options: Required<QueryResultsExcelExportOptions>,
+): Record<string, string | number> {
   return {
     姓名: row.name ?? '',
+    身份证号: options.exportFullIdCard
+      ? row.idCardNumber ?? ''
+      : row.maskedDisplay ?? row.idCardLast4 ?? '',
     身份证后四位: row.idCardLast4 ?? '',
     主类别: row.primaryCategory ?? '',
     地区: row.region ?? '',
@@ -330,6 +344,7 @@ function readPersonFiles(db: Database.Database, personIds: string[]): PersonFile
     SELECT
       people.id AS person_id,
       people.name AS person_name,
+      people.id_card_last4,
       people.primary_category,
       people.region,
       files.id AS file_id,
@@ -355,9 +370,18 @@ function readPersonFiles(db: Database.Database, personIds: string[]): PersonFile
 function buildExportTargetPath(outputRoot: string, row: PersonFileExportRow): string {
   const category = sanitizePathSegment(row.primary_category ?? '未识别类别')
   const region = sanitizePathSegment(row.region ?? '未划分区域')
-  const person = sanitizePathSegment(`${row.person_name ?? '未知人员'}_${row.person_id.slice(0, 8)}`)
+  const person = resolveExportPersonFolder(row)
   const folder = sanitizePathSegment(documentTypeLabel(row.document_type))
   return path.join(outputRoot, category, region, person, folder, sanitizePathSegment(row.file_name))
+}
+
+function resolveExportPersonFolder(row: PersonFileExportRow): string {
+  const name = sanitizePathSegment(row.person_name ?? '未知人员')
+  if (row.id_card_last4) {
+    return sanitizePathSegment(`${name}_${row.id_card_last4}`)
+  }
+
+  return sanitizePathSegment(`${name}_${stablePersonNumber(row.person_id)}`)
 }
 
 function documentTypeLabel(documentType: string | null): string {
@@ -392,6 +416,7 @@ function insertExportJob(
   db: Database.Database,
   input: {
     conditions: QueryPeopleConditions
+    exportFullIdCard?: boolean
     selectedPeople: string[]
     outputType: string
     outputPath: string
@@ -426,7 +451,10 @@ function insertExportJob(
   `).run({
     id,
     queryText: createQueryText(input.conditions),
-    parsedConditions: JSON.stringify(input.conditions),
+    parsedConditions: JSON.stringify({
+      ...input.conditions,
+      export_full_id_card: Boolean(input.exportFullIdCard),
+    }),
     selectedPeople: JSON.stringify(input.selectedPeople),
     outputType: input.outputType,
     outputPath: input.outputPath,
@@ -436,6 +464,14 @@ function insertExportJob(
   })
 
   return id
+}
+
+function normalizeQueryResultsExcelExportOptions(
+  options: QueryResultsExcelExportOptions,
+): Required<QueryResultsExcelExportOptions> {
+  return {
+    exportFullIdCard: Boolean(options.exportFullIdCard),
+  }
 }
 
 function createQueryText(conditions: QueryPeopleConditions): string {
@@ -454,6 +490,16 @@ function sanitizePathSegment(value: string): string {
     .join('')
     .trim()
   return sanitized || '未命名'
+}
+
+function stablePersonNumber(personId: string): string {
+  const digits = personId.replace(/\D/g, '').slice(-6)
+  if (digits) {
+    return `P${digits.padStart(6, '0')}`
+  }
+
+  const code = [...personId].reduce((sum, char) => sum + char.charCodeAt(0), 0)
+  return `P${String(code % 1_000_000).padStart(6, '0')}`
 }
 
 function isPathInside(rootPath: string, targetPath: string): boolean {

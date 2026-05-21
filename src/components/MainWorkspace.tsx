@@ -13,6 +13,7 @@ interface MainWorkspaceProps {
 
 interface NewPersonDraft {
   name: string
+  idCardNumber: string
   idCardLast4: string
 }
 
@@ -68,6 +69,7 @@ function SearchWorkspace() {
   const [isSearching, setIsSearching] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
   const [exportMessage, setExportMessage] = useState<string | null>(null)
+  const [exportFullIdCard, setExportFullIdCard] = useState(false)
 
   const conditions: QueryPeopleConditions = {
     categories,
@@ -101,7 +103,7 @@ function SearchWorkspace() {
 
   async function handleExportExcel() {
     setExportMessage(null)
-    const result = await window.qualidex.exportQueryResultsExcel(conditions)
+    const result = await window.qualidex.exportQueryResultsExcel(conditions, { exportFullIdCard })
     if (result) {
       setExportMessage('已导出 ' + result.rowCount + ' 条查询结果。')
     }
@@ -164,6 +166,14 @@ function SearchWorkspace() {
             />
             <span>包含待确认资料</span>
           </label>
+          <label className="checkbox-field">
+            <input
+              type="checkbox"
+              checked={exportFullIdCard}
+              onChange={(event) => setExportFullIdCard(event.target.checked)}
+            />
+            <span>Excel 导出完整身份证号</span>
+          </label>
         </div>
         <div className="workspace-actions">
           <button type="button" className="primary-button" onClick={() => void handleSearch()} disabled={isSearching}>
@@ -203,6 +213,7 @@ function SearchWorkspace() {
                     <div className="tag-row">
                       <span className="tag green">{person.primaryCategory ?? '未识别类别'}</span>
                       <span className="tag blue">{person.region ?? '未划分区域'}</span>
+                      {person.idCardNumber ? <span className="tag gray">身份证 {person.idCardNumber}</span> : null}
                       {person.educationLevel ? <span className="tag gray">{person.educationLevel}</span> : null}
                     </div>
                   </div>
@@ -647,7 +658,7 @@ function ReviewWorkspace() {
   }
 
   async function handleCreatePerson(item: ReviewItemSummary) {
-    const draft = newPersonDrafts[item.id] ?? { name: '', idCardLast4: '' }
+    const draft = newPersonDrafts[item.id] ?? { name: '', idCardNumber: '', idCardLast4: '' }
     if (!draft.name.trim()) {
       setError('请先填写新人员姓名。')
       return
@@ -659,6 +670,7 @@ function ReviewWorkspace() {
     try {
       await window.qualidex.createPersonFromReview(item.id, {
         name: draft.name,
+        idCardNumber: draft.idCardNumber,
         idCardLast4: draft.idCardLast4,
         primaryCategory: fieldDrafts[item.id]?.primaryCategory ?? item.primaryCategory,
         region: fieldDrafts[item.id]?.region ?? item.region,
@@ -816,6 +828,16 @@ function ReviewWorkspace() {
                     />
                   </label>
                   <label>
+                    <span>完整身份证号</span>
+                    <input
+                      type="text"
+                      value={newPersonDrafts[item.id]?.idCardNumber ?? ''}
+                      onChange={(event) => updateNewPersonDraft(item.id, { idCardNumber: event.target.value })}
+                      placeholder="可选，18 位"
+                      maxLength={18}
+                    />
+                  </label>
+                  <label>
                     <span>身份证后四位</span>
                     <input
                       type="text"
@@ -867,6 +889,7 @@ function ReviewWorkspace() {
                   </label>
                 </div>
                 <div className="review-detail-list">
+                  <p>{item.idCardNumber ? `身份证：${item.idCardNumber}` : '身份证：待确认'}</p>
                   <p>{item.ocrTextPreview ? `OCR：${item.ocrTextPreview}` : 'OCR：暂无文本预览'}</p>
                   <p>{item.aiSummary ? `AI：${item.aiSummary}` : 'AI：暂无结构化摘要'}</p>
                 </div>
@@ -983,6 +1006,7 @@ function createNewPersonDrafts(items: ReviewItemSummary[]): Record<string, NewPe
       item.id,
       {
         name: '',
+        idCardNumber: '',
         idCardLast4: '',
       },
     ]),
@@ -990,7 +1014,7 @@ function createNewPersonDrafts(items: ReviewItemSummary[]): Record<string, NewPe
 }
 
 function personCandidateLabel(person: PersonCandidateSummary): string {
-  const identity = person.idCardLast4 ? `_${person.idCardLast4}` : ''
+  const identity = person.idCardNumber ? `_${person.idCardNumber}` : person.idCardLast4 ? `_${person.idCardLast4}` : ''
   const category = person.primaryCategory ?? '未识别类别'
   const region = person.region ?? '未划分区域'
   return `${person.name ?? '未知人员'}${identity} / ${category} / ${region} / ${person.documentCount} 份资料`

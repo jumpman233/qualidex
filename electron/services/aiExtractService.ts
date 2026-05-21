@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import { loadAiModelConfig, type AiModelConfig } from './aiConfig'
+import { sanitizeIdCardsForAi } from './idCardService'
 import { persistStructuredRecognition } from './structuredRecognitionService'
 
 export interface AiExtractionInput {
@@ -25,6 +26,7 @@ export interface AiExtractionResult {
   person: {
     name: string | null
     id_card_last4: string | null
+    masked_display: string | null
   }
   region: {
     value: string | null
@@ -49,6 +51,7 @@ export interface AiExtractionResult {
     detected_people: Array<{
       name: string | null
       id_card_last4: string | null
+      masked_display: string | null
     }>
   }
   confidence: number
@@ -174,7 +177,7 @@ function buildSystemPrompt(): string {
     '不要编造任何字段；不确定时返回 null、unknown 或空数组。',
     '你不能把建议当成最终事实；低置信度、字段冲突、多人资料、未知人员、未知类别、未知地区都必须 needs_manual_review=true。',
     '类别规则：primary_value 只能给一个主类别；candidate_values 可以给多个候选类别。',
-    '隐私规则：身份证号只能输出后四位 id_card_last4，不要输出完整身份证号。',
+    '隐私规则：身份证号只能输出后四位 id_card_last4 和脱敏值 masked_display，不要输出完整身份证号。',
     '必须只输出 JSON，不要输出 Markdown 或解释文字。',
   ].join('\n')
 }
@@ -194,6 +197,7 @@ function buildUserPayload(input: AiExtractionInput) {
       person: {
         name: 'string | null',
         id_card_last4: 'string | null',
+        masked_display: 'string | null',
       },
       region: {
         value: 'string | null',
@@ -215,7 +219,7 @@ function buildUserPayload(input: AiExtractionInput) {
       },
       multi_person: {
         is_multi_person_file: 'boolean',
-        detected_people: [{ name: 'string | null', id_card_last4: 'string | null' }],
+        detected_people: [{ name: 'string | null', id_card_last4: 'string | null', masked_display: 'string | null' }],
       },
       confidence: 'number 0-1',
       needs_manual_review: 'boolean',
@@ -224,15 +228,15 @@ function buildUserPayload(input: AiExtractionInput) {
     },
     file: {
       id: input.fileId,
-      file_name: input.fileName,
-      original_path: input.originalPath,
-      parent_folder: input.parentFolder,
+      file_name: sanitizeIdCardsForAi(input.fileName),
+      original_path: sanitizeIdCardsForAi(input.originalPath),
+      parent_folder: sanitizeIdCardsForAi(input.parentFolder),
     },
     user_defaults: {
       primary_category: input.defaultPrimaryCategory ?? null,
       region: input.defaultRegion ?? null,
     },
-    ocr_text: input.ocrText.slice(0, MAX_OCR_TEXT_CHARS),
+    ocr_text: sanitizeIdCardsForAi(input.ocrText).slice(0, MAX_OCR_TEXT_CHARS),
   }
 }
 
@@ -257,6 +261,7 @@ function normalizeExtractionResult(value: unknown): AiExtractionResult {
     person: {
       name: nullableString(person.name),
       id_card_last4: normalizeLast4(person.id_card_last4),
+      masked_display: sanitizeNullableIdCardOutput(person.masked_display),
     },
     region: {
       value: nullableString(region.value),
@@ -514,8 +519,14 @@ function normalizeDetectedPeople(value: unknown): AiExtractionResult['multi_pers
     return {
       name: nullableString(record.name),
       id_card_last4: normalizeLast4(record.id_card_last4),
+      masked_display: sanitizeNullableIdCardOutput(record.masked_display),
     }
   })
+}
+
+function sanitizeNullableIdCardOutput(value: unknown): string | null {
+  const normalized = nullableString(value)
+  return normalized ? sanitizeIdCardsForAi(normalized) : null
 }
 
 function getErrorMessage(error: unknown): string {

@@ -20,6 +20,7 @@ const modules = [
   ['electron/services/pdfRasterService.ts', 'electron/services/pdfRasterService.js'],
   ['electron/services/textExtractService.ts', 'electron/services/textExtractService.js'],
   ['electron/services/aiConfig.ts', 'electron/services/aiConfig.js'],
+  ['electron/services/idCardService.ts', 'electron/services/idCardService.js'],
   ['electron/services/aiExtractService.ts', 'electron/services/aiExtractService.js'],
   ['electron/services/structuredRecognitionService.ts', 'electron/services/structuredRecognitionService.js'],
   ['electron/services/processingQueueService.ts', 'electron/services/processingQueueService.js'],

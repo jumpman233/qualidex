@@ -57,8 +57,11 @@ export function initializeSchema(db: Database.Database): void {
     CREATE TABLE IF NOT EXISTS people (
       id TEXT PRIMARY KEY,
       name TEXT,
+      id_card_number TEXT,
+      id_card_number_encrypted TEXT,
       id_card_last4 TEXT,
       id_card_hash TEXT,
+      masked_display TEXT,
       primary_category TEXT,
       primary_category_source TEXT,
       primary_category_confidence REAL,
@@ -212,6 +215,7 @@ export function initializeSchema(db: Database.Database): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_people_name ON people(name);
+    CREATE INDEX IF NOT EXISTS idx_people_id_card_hash ON people(id_card_hash);
     CREATE INDEX IF NOT EXISTS idx_person_documents_file_id ON person_documents(file_id);
     CREATE INDEX IF NOT EXISTS idx_licenses_file_id ON licenses(file_id);
     CREATE INDEX IF NOT EXISTS idx_review_items_ref_id ON review_items(ref_id);
@@ -227,6 +231,10 @@ export function initializeSchema(db: Database.Database): void {
   ensureColumn(db, 'files', 'path_segments', 'TEXT')
   ensureColumn(db, 'files', 'path_parse_result', 'TEXT')
   ensureColumn(db, 'files', 'path_confidence', 'REAL')
+  ensureColumn(db, 'people', 'id_card_number', 'TEXT')
+  ensureColumn(db, 'people', 'id_card_number_encrypted', 'TEXT')
+  ensureColumn(db, 'people', 'masked_display', 'TEXT')
+  db.exec('CREATE INDEX IF NOT EXISTS idx_people_id_card_hash ON people(id_card_hash)')
   ensureColumn(db, 'licenses', 'issuer_authority_level', 'TEXT')
   ensureColumn(db, 'licenses', 'issuer_authority_score', 'INTEGER')
   ensureColumn(db, 'licenses', 'issuer_authority_source', 'TEXT')

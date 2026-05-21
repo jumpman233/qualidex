@@ -25,6 +25,8 @@
 - P1-I 回收站 / 软删除恢复 / 归档输出清理已完成：支持人员和文件软删除、恢复，以及清理归档输出副本；原始资料不移动、不删除。
 - P1-J 可见中文文案清理已完成：修复首页和查询页的历史乱码/编码污染文案，保证当前主流程展示为中文。
 - P1-K 回归验证入口已完成：新增 `pnpm run verify:p1` 串联 P1 主链路验证、lint 和 build；不包含会触发 native rebuild 的 `verify:db`。
+- P0-1 完整身份证号已完成：本地 SQLite 保存完整身份证号、后四位、hash 和 AI 脱敏值；云端 AI 请求前脱敏；人员归并优先使用完整身份证 hash；本地应用页面可展示完整身份证号。
+- P0-2 归档文件夹命名已完成：归档预览、归档写入和查询资料文件夹导出均不暴露完整身份证号；查询结果 Excel 默认导出脱敏身份证号，仅显式开启 `exportFullIdCard` 时导出完整值，并在导出日志中记录开关。
 
 ### 进行中
 
@@ -42,6 +44,7 @@
 - 已通过：`pnpm run verify:archive-preview`
 - 已通过：`pnpm run verify:archive-write`
 - 已通过：`pnpm run verify:structured-recognition`
+- 已通过：`pnpm run verify:id-card-privacy`
 - 已通过：`pnpm run verify:processing-worker-ai-success`
 - 已通过：`pnpm run verify:review-list`
 - 已通过：`pnpm run verify:review-actions`
@@ -83,12 +86,12 @@ pnpm exec prebuild-install --runtime=electron --target=30.0.1 --dist-url=https:/
 
 工作内容：
 - 数据库补齐 `people.id_card_number`，并预留 `id_card_number_encrypted`、`id_card_hash`、`masked_display`。
-- 本地 OCR / 本地解析器提取完整身份证号，生成 hash、后四位和脱敏展示值。
+- 本地 OCR / 本地解析器提取完整身份证号，生成 hash、后四位和 AI 脱敏值。
 - 云端 AI 输入前做脱敏，禁止上传完整身份证号。
 - 人员归并、冲突判断、人工合并、查询和导出逻辑改为优先使用完整身份证号或 hash。
 
 验证步骤：
-- 导入包含身份证号的样本后，本地 SQLite 能保存完整值，页面默认只显示脱敏值。
+- 导入包含身份证号的样本后，本地 SQLite 能保存完整值，页面可显示完整身份证号。
 - AI 请求日志或测试替身中不出现完整身份证号。
 - 同身份证号多文件归并到同一人；姓名相同但身份证号不同进入待确认。
 

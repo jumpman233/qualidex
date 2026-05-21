@@ -12,7 +12,9 @@ export interface QueryPeopleConditions {
 export interface QueryPersonResult {
   personId: string
   name: string | null
+  idCardNumber: string | null
   idCardLast4: string | null
+  maskedDisplay: string | null
   primaryCategory: string | null
   region: string | null
   educationLevel: string | null
@@ -24,7 +26,9 @@ export interface QueryPersonResult {
 interface QueryPersonRow {
   person_id: string
   name: string | null
+  id_card_number: string | null
   id_card_last4: string | null
+  masked_display: string | null
   primary_category: string | null
   region: string | null
   education_level: string | null
@@ -122,7 +126,9 @@ export function queryPeople(
     SELECT
       people.id AS person_id,
       people.name,
+      people.id_card_number,
       people.id_card_last4,
+      people.masked_display,
       people.primary_category,
       people.region,
       people.education_level,
@@ -147,7 +153,9 @@ export function queryPeople(
   return rows.map((row) => ({
     personId: row.person_id,
     name: row.name,
+    idCardNumber: row.id_card_number,
     idCardLast4: row.id_card_last4,
+    maskedDisplay: row.masked_display,
     primaryCategory: row.primary_category,
     region: row.region,
     educationLevel: row.education_level,

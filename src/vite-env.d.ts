@@ -174,6 +174,7 @@ interface ReviewItemSummary {
   aiSummary: string | null
   personId: string | null
   personName: string | null
+  idCardNumber: string | null
   primaryCategory: string | null
   region: string | null
   documentType: string | null
@@ -200,7 +201,9 @@ interface ReviewFieldPatch {
 interface PersonCandidateSummary {
   id: string
   name: string | null
+  idCardNumber: string | null
   idCardLast4: string | null
+  maskedDisplay: string | null
   primaryCategory: string | null
   region: string | null
   reviewStatus: string | null
@@ -209,6 +212,7 @@ interface PersonCandidateSummary {
 
 interface CreatePersonFromReviewInput {
   name: string
+  idCardNumber?: string | null
   idCardLast4?: string | null
   primaryCategory?: string | null
   region?: string | null
@@ -240,7 +244,9 @@ interface QueryPeopleConditions {
 interface QueryPersonResult {
   personId: string
   name: string | null
+  idCardNumber: string | null
   idCardLast4: string | null
+  maskedDisplay: string | null
   primaryCategory: string | null
   region: string | null
   educationLevel: string | null
@@ -253,6 +259,10 @@ interface QueryResultsExcelExportResult {
   exportJobId: string
   outputPath: string
   rowCount: number
+}
+
+interface QueryResultsExcelExportOptions {
+  exportFullIdCard?: boolean
 }
 
 interface QueryFilesExportResult {
@@ -306,7 +316,7 @@ interface Window {
     createPersonFromReview(reviewItemId: string, input: CreatePersonFromReviewInput): Promise<ReviewItemActionResult>
     mergePeople(input: MergePeopleInput): Promise<MergePeopleResult>
     queryPeople(conditions: QueryPeopleConditions): Promise<QueryPersonResult[]>
-    exportQueryResultsExcel(conditions: QueryPeopleConditions): Promise<QueryResultsExcelExportResult | null>
+    exportQueryResultsExcel(conditions: QueryPeopleConditions, options?: QueryResultsExcelExportOptions): Promise<QueryResultsExcelExportResult | null>
     exportQueryResultFiles(conditions: QueryPeopleConditions): Promise<QueryFilesExportResult | null>
     listDeletedItems(limit?: number): Promise<DeletedItemSummary[]>
     softDeletePerson(personId: string, reason?: string): Promise<RecycleActionResult>

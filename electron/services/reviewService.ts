@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
+import { normalizeIdCardNumber } from './idCardService'
 
 export interface ReviewItemSummary {
   id: string
@@ -19,6 +20,7 @@ export interface ReviewItemSummary {
   aiSummary: string | null
   personId: string | null
   personName: string | null
+  idCardNumber: string | null
   primaryCategory: string | null
   region: string | null
   documentType: string | null
@@ -45,7 +47,9 @@ export interface ReviewFieldPatch {
 export interface PersonCandidateSummary {
   id: string
   name: string | null
+  idCardNumber: string | null
   idCardLast4: string | null
+  maskedDisplay: string | null
   primaryCategory: string | null
   region: string | null
   reviewStatus: string | null
@@ -54,6 +58,7 @@ export interface PersonCandidateSummary {
 
 export interface CreatePersonFromReviewInput {
   name: string
+  idCardNumber?: string | null
   idCardLast4?: string | null
   primaryCategory?: string | null
   region?: string | null
@@ -92,6 +97,7 @@ interface ReviewItemRow {
   ai_error: string | null
   person_id: string | null
   person_name: string | null
+  id_card_number: string | null
   person_primary_category: string | null
   person_region: string | null
   document_type: string | null
@@ -129,7 +135,9 @@ interface ReviewFieldSnapshot {
 interface PersonCandidateRow {
   id: string
   name: string | null
+  id_card_number: string | null
   id_card_last4: string | null
+  masked_display: string | null
   primary_category: string | null
   region: string | null
   review_status: string | null
@@ -181,6 +189,7 @@ export function listReviewItems(
       ai_latest.error AS ai_error,
       people.id AS person_id,
       people.name AS person_name,
+      people.id_card_number,
       people.primary_category AS person_primary_category,
       people.region AS person_region,
       person_documents.document_type,
@@ -314,7 +323,9 @@ export function listPersonCandidates(
     SELECT
       people.id,
       people.name,
+      people.id_card_number,
       people.id_card_last4,
+      people.masked_display,
       people.primary_category,
       people.region,
       people.review_status,
@@ -328,7 +339,9 @@ export function listPersonCandidates(
       AND (
         @query = ''
         OR people.name LIKE @likeQuery
+        OR people.id_card_number LIKE @likeQuery
         OR people.id_card_last4 LIKE @likeQuery
+        OR people.masked_display LIKE @likeQuery
         OR people.primary_category LIKE @likeQuery
         OR people.region LIKE @likeQuery
       )
@@ -344,7 +357,9 @@ export function listPersonCandidates(
   return rows.map((row) => ({
     id: row.id,
     name: row.name,
+    idCardNumber: row.id_card_number,
     idCardLast4: row.id_card_last4,
+    maskedDisplay: row.masked_display,
     primaryCategory: row.primary_category,
     region: row.region,
     reviewStatus: row.review_status,
@@ -454,7 +469,8 @@ export function createPersonFromReviewItem(
   }
 
   const name = normalizeRequiredText(input.name, '人员姓名')
-  const idCardLast4 = normalizeIdCardLast4(input.idCardLast4)
+  const idCard = normalizeInputIdCardNumber(input.idCardNumber)
+  const idCardLast4 = idCard?.idCardLast4 ?? normalizeIdCardLast4(input.idCardLast4)
   const primaryCategory = normalizeOptionalText(input.primaryCategory)
   const region = normalizeOptionalText(input.region)
   const fileId = existing.ref_id
@@ -468,7 +484,11 @@ export function createPersonFromReviewItem(
       INSERT INTO people (
         id,
         name,
+        id_card_number,
+        id_card_number_encrypted,
         id_card_last4,
+        id_card_hash,
+        masked_display,
         primary_category,
         primary_category_source,
         primary_category_confidence,
@@ -484,7 +504,11 @@ export function createPersonFromReviewItem(
       VALUES (
         @id,
         @name,
+        @idCardNumber,
+        NULL,
         @idCardLast4,
+        @idCardHash,
+        @maskedDisplay,
         @primaryCategory,
         'manual',
         1,
@@ -500,7 +524,10 @@ export function createPersonFromReviewItem(
     `).run({
       id: personId,
       name,
+      idCardNumber: idCard?.idCardNumber ?? null,
       idCardLast4,
+      idCardHash: idCard?.idCardHash ?? null,
+      maskedDisplay: idCard?.maskedDisplay ?? null,
       primaryCategory,
       region,
       createdAt: now,
@@ -568,7 +595,7 @@ export function createPersonFromReviewItem(
       targetId: reviewItemId,
       beforeValue: JSON.stringify(beforeValue),
       afterValue: JSON.stringify(afterValue),
-      reason: JSON.stringify({ name, idCardLast4, primaryCategory, region }),
+      reason: JSON.stringify({ name, idCardNumber: idCard?.idCardNumber ?? null, idCardLast4, primaryCategory, region }),
       createdAt: now,
     })
   })
@@ -805,7 +832,9 @@ function readPersonCandidateById(db: Database.Database, personId: string): Perso
     SELECT
       id,
       name,
+      id_card_number,
       id_card_last4,
+      masked_display,
       primary_category,
       region,
       review_status,
@@ -824,7 +853,9 @@ function readPersonCandidateById(db: Database.Database, personId: string): Perso
   return {
     id: row.id,
     name: row.name,
+    idCardNumber: row.id_card_number,
     idCardLast4: row.id_card_last4,
+    maskedDisplay: row.masked_display,
     primaryCategory: row.primary_category,
     region: row.region,
     reviewStatus: row.review_status,
@@ -863,6 +894,7 @@ function readReviewItemRowsById(db: Database.Database, reviewItemId: string): Re
       ai_latest.error AS ai_error,
       people.id AS person_id,
       people.name AS person_name,
+      people.id_card_number,
       people.primary_category AS person_primary_category,
       people.region AS person_region,
       person_documents.document_type,
@@ -997,6 +1029,20 @@ function normalizeIdCardLast4(value: string | null | undefined): string | null {
   }
 
   return normalized.toUpperCase()
+}
+
+function normalizeInputIdCardNumber(value: string | null | undefined) {
+  const normalized = normalizeOptionalText(value)
+  if (!normalized) {
+    return null
+  }
+
+  const idCard = normalizeIdCardNumber(normalized)
+  if (!idCard) {
+    throw new Error('完整身份证号必须是 18 位大陆身份证号，末位可为 X。')
+  }
+
+  return idCard
 }
 
 function normalizeRecognitionStatus(value: string | null | undefined): string | null {
@@ -1269,7 +1315,9 @@ function readCreatePersonSnapshot(
     SELECT
       people.id,
       people.name,
+      people.id_card_number,
       people.id_card_last4,
+      people.masked_display,
       people.primary_category,
       people.region,
       people.review_status,
@@ -1289,7 +1337,9 @@ function readCreatePersonSnapshot(
       ? {
           id: createdPerson.id,
           name: createdPerson.name,
+          idCardNumber: createdPerson.id_card_number,
           idCardLast4: createdPerson.id_card_last4,
+          maskedDisplay: createdPerson.masked_display,
           primaryCategory: createdPerson.primary_category,
           region: createdPerson.region,
           reviewStatus: createdPerson.review_status,
@@ -1362,6 +1412,7 @@ function toReviewItemSummary(row: ReviewItemRow): ReviewItemSummary {
     aiSummary: createAiSummary(row.ai_result_json, row.ai_error),
     personId: row.person_id,
     personName: row.person_name,
+    idCardNumber: row.id_card_number,
     primaryCategory: row.document_target_category ?? row.license_primary_category ?? row.person_primary_category,
     region: row.license_region ?? row.person_region,
     documentType: row.document_type,

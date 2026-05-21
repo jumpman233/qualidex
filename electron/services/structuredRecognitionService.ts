@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import type { AiExtractionInput, AiExtractionResult } from './aiExtractService'
+import { extractIdCardNumbers, type NormalizedIdCard } from './idCardService'
 
 export interface StructuredRecognitionPersistResult {
   personId: string | null
@@ -13,6 +14,7 @@ export interface StructuredRecognitionPersistResult {
 interface PersonRow {
   id: string
   name: string | null
+  id_card_number: string | null
   id_card_last4: string | null
   primary_category: string | null
   region: string | null
@@ -27,7 +29,9 @@ export function persistStructuredRecognition(
   reviewReasons: string[],
 ): StructuredRecognitionPersistResult {
   const now = new Date().toISOString()
-  const personMatch = resolvePerson(db, result, now)
+  const localIdCards = extractIdCardNumbers(input.ocrText)
+  const localIdCard = localIdCards.length === 1 ? localIdCards[0] : null
+  const personMatch = resolvePerson(db, result, localIdCard, now)
 
   updateFileMultiPersonFlag(db, input.fileId, result.multi_person.is_multi_person_file, now)
 
@@ -38,7 +42,7 @@ export function persistStructuredRecognition(
     ? insertLicense(db, input, result, personMatch.person.id, reviewReasons, now)
     : null
 
-  const structuredReviewReasons = collectStructuredReviewReasons(result, personMatch.strategy, reviewReasons)
+  const structuredReviewReasons = collectStructuredReviewReasons(result, personMatch.strategy, reviewReasons, localIdCards)
   persistStructuredReviewItems(db, input.fileId, structuredReviewReasons, result, now)
 
   return {
@@ -53,10 +57,11 @@ export function persistStructuredRecognition(
 function resolvePerson(
   db: Database.Database,
   result: AiExtractionResult,
+  localIdCard: NormalizedIdCard | null,
   now: string,
 ): { person: PersonRow | null, strategy: string } {
   const name = result.person.name?.trim() || null
-  const idCardLast4 = result.person.id_card_last4?.trim() || null
+  const idCardLast4 = localIdCard?.idCardLast4 ?? result.person.id_card_last4?.trim() ?? null
   const primaryCategory = result.category.primary_value?.trim() || null
   const region = result.region.value?.trim() || null
 
@@ -64,9 +69,30 @@ function resolvePerson(
     return { person: null, strategy: 'person_unknown' }
   }
 
+  if (localIdCard) {
+    const existing = db.prepare(`
+      SELECT id, name, id_card_number, id_card_last4, primary_category, region
+      FROM people
+      WHERE id_card_hash = @idCardHash
+        AND status = 'active'
+        AND deleted_at IS NULL
+      LIMIT 1
+    `).get({ idCardHash: localIdCard.idCardHash }) as PersonRow | undefined
+
+    if (existing) {
+      if (existing.name && existing.name !== name) {
+        updatePersonFromResult(db, existing.id, result, localIdCard, now, false)
+        return { person: existing, strategy: 'id_card_name_conflict' }
+      }
+
+      updatePersonFromResult(db, existing.id, result, localIdCard, now, true)
+      return { person: existing, strategy: 'id_card_hash' }
+    }
+  }
+
   if (idCardLast4) {
     const existing = db.prepare(`
-      SELECT id, name, id_card_last4, primary_category, region
+      SELECT id, name, id_card_number, id_card_last4, primary_category, region
       FROM people
       WHERE name = @name
         AND id_card_last4 = @idCardLast4
@@ -76,14 +102,14 @@ function resolvePerson(
     `).get({ name, idCardLast4 }) as PersonRow | undefined
 
     if (existing) {
-      updatePersonFromResult(db, existing.id, result, now)
+      updatePersonFromResult(db, existing.id, result, localIdCard, now, true)
       return { person: existing, strategy: 'name_id_last4' }
     }
   }
 
   if (!idCardLast4 && primaryCategory && region) {
     const existing = db.prepare(`
-      SELECT id, name, id_card_last4, primary_category, region
+      SELECT id, name, id_card_number, id_card_last4, primary_category, region
       FROM people
       WHERE name = @name
         AND primary_category = @primaryCategory
@@ -94,36 +120,42 @@ function resolvePerson(
     `).get({ name, primaryCategory, region }) as PersonRow | undefined
 
     if (existing) {
-      updatePersonFromResult(db, existing.id, result, now)
+      updatePersonFromResult(db, existing.id, result, localIdCard, now, true)
       return { person: existing, strategy: 'name_category_region' }
     }
   }
 
   const sameNameRows = db.prepare(`
-    SELECT id, name, id_card_last4, primary_category, region
+    SELECT id, name, id_card_number, id_card_last4, primary_category, region
     FROM people
     WHERE name = @name
       AND status = 'active'
       AND deleted_at IS NULL
   `).all({ name }) as PersonRow[]
 
-  if (sameNameRows.length > 0 && (!idCardLast4 || sameNameRows.some((row) => row.id_card_last4 !== idCardLast4))) {
-    return { person: createPerson(db, result, now, 'pending_review'), strategy: 'person_merge_conflict' }
+  if (sameNameRows.length > 0 && localIdCard && sameNameRows.some((row) => row.id_card_number && row.id_card_number !== localIdCard.idCardNumber)) {
+    return { person: createPerson(db, result, localIdCard, now, 'pending_review'), strategy: 'person_id_card_conflict' }
   }
 
-  return { person: createPerson(db, result, now, reviewStatusForResult(result)), strategy: 'created' }
+  if (sameNameRows.length > 0 && (!idCardLast4 || sameNameRows.some((row) => row.id_card_last4 !== idCardLast4))) {
+    return { person: createPerson(db, result, localIdCard, now, 'pending_review'), strategy: 'person_merge_conflict' }
+  }
+
+  return { person: createPerson(db, result, localIdCard, now, reviewStatusForResult(result)), strategy: 'created' }
 }
 
 function createPerson(
   db: Database.Database,
   result: AiExtractionResult,
+  localIdCard: NormalizedIdCard | null,
   now: string,
   reviewStatus: string,
 ): PersonRow {
   const person: PersonRow = {
     id: randomUUID(),
     name: result.person.name,
-    id_card_last4: result.person.id_card_last4,
+    id_card_number: localIdCard?.idCardNumber ?? null,
+    id_card_last4: localIdCard?.idCardLast4 ?? result.person.id_card_last4,
     primary_category: result.category.primary_value,
     region: result.region.value,
   }
@@ -132,8 +164,11 @@ function createPerson(
     INSERT INTO people (
       id,
       name,
+      id_card_number,
+      id_card_number_encrypted,
       id_card_last4,
       id_card_hash,
+      masked_display,
       primary_category,
       primary_category_source,
       primary_category_confidence,
@@ -152,8 +187,11 @@ function createPerson(
     VALUES (
       @id,
       @name,
+      @idCardNumber,
+      NULL,
       @idCardLast4,
       @idCardHash,
+      @maskedDisplay,
       @primaryCategory,
       @primaryCategorySource,
       @primaryCategoryConfidence,
@@ -173,7 +211,9 @@ function createPerson(
     id: person.id,
     name: person.name,
     idCardLast4: person.id_card_last4,
-    idCardHash: hashLast4(person.id_card_last4),
+    idCardNumber: localIdCard?.idCardNumber ?? null,
+    idCardHash: localIdCard?.idCardHash ?? null,
+    maskedDisplay: localIdCard?.maskedDisplay ?? result.person.masked_display,
     primaryCategory: person.primary_category,
     primaryCategorySource: result.category.source,
     primaryCategoryConfidence: result.category.confidence,
@@ -195,11 +235,21 @@ function updatePersonFromResult(
   db: Database.Database,
   personId: string,
   result: AiExtractionResult,
+  localIdCard: NormalizedIdCard | null,
   now: string,
+  allowNameFill: boolean,
 ): void {
   db.prepare(`
     UPDATE people
     SET
+      name = CASE
+        WHEN @allowNameFill = 1 THEN COALESCE(name, @name)
+        ELSE name
+      END,
+      id_card_number = COALESCE(id_card_number, @idCardNumber),
+      id_card_last4 = COALESCE(id_card_last4, @idCardLast4),
+      id_card_hash = COALESCE(id_card_hash, @idCardHash),
+      masked_display = COALESCE(masked_display, @maskedDisplay),
       primary_category = COALESCE(primary_category, @primaryCategory),
       primary_category_source = COALESCE(primary_category_source, @primaryCategorySource),
       primary_category_confidence = COALESCE(primary_category_confidence, @primaryCategoryConfidence),
@@ -218,6 +268,12 @@ function updatePersonFromResult(
     WHERE id = @personId
   `).run({
     personId,
+    allowNameFill: allowNameFill ? 1 : 0,
+    name: result.person.name,
+    idCardNumber: localIdCard?.idCardNumber ?? null,
+    idCardLast4: localIdCard?.idCardLast4 ?? result.person.id_card_last4,
+    idCardHash: localIdCard?.idCardHash ?? null,
+    maskedDisplay: localIdCard?.maskedDisplay ?? result.person.masked_display,
     primaryCategory: result.category.primary_value,
     primaryCategorySource: result.category.source,
     primaryCategoryConfidence: result.category.confidence,
@@ -427,6 +483,7 @@ function collectStructuredReviewReasons(
   result: AiExtractionResult,
   personMatchStrategy: string,
   reviewReasons: string[],
+  localIdCards: NormalizedIdCard[],
 ): string[] {
   const reasons = new Set<string>()
 
@@ -435,6 +492,15 @@ function collectStructuredReviewReasons(
   }
   if (personMatchStrategy === 'person_merge_conflict') {
     reasons.add('存在同名人员归并冲突')
+  }
+  if (personMatchStrategy === 'person_id_card_conflict') {
+    reasons.add('同名人员存在不同完整身份证号')
+  }
+  if (personMatchStrategy === 'id_card_name_conflict') {
+    reasons.add('完整身份证号一致但姓名不一致')
+  }
+  if (localIdCards.length > 1) {
+    reasons.add('同一文件出现多个完整身份证号')
   }
   if (result.license.is_license_candidate && result.confidence < CONFIDENCE_REVIEW_THRESHOLD) {
     reasons.add('证书识别置信度低')
@@ -536,7 +602,7 @@ function reviewStatusForResult(result: AiExtractionResult): string {
 }
 
 function toReviewItemType(reason: string): string {
-  if (reason.includes('归并冲突')) {
+  if (reason.includes('归并冲突') || reason.includes('身份证号')) {
     return 'person_merge_conflict'
   }
   if (reason.includes('人员')) {
@@ -555,12 +621,4 @@ function toReviewItemType(reason: string): string {
     return 'multi_person_file'
   }
   return 'ai_uncertain'
-}
-
-function hashLast4(idCardLast4: string | null): string | null {
-  if (!idCardLast4) {
-    return null
-  }
-
-  return createHash('sha256').update(idCardLast4).digest('hex')
 }

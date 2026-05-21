@@ -48,7 +48,7 @@ CREATE TABLE people (
 - [P0] `id_card_number` 保存完整身份证号明文，仅限本地 SQLite。
 - [P1] `id_card_number_encrypted` 预留给后续加密存储。
 - [P0] `id_card_hash` 用于快速查重、归并和冲突判断。
-- [P0] `masked_display` 用于页面默认脱敏展示，例如 `1234****5678`。
+- [P0] `masked_display` 用于云端 AI 脱敏输入、导出默认脱敏值和隐私场景展示，例如 `1234****5678`；本地应用页面可展示完整身份证号。
 - [P0] 不允许一个人员关联多个不同完整身份证号；冲突时进入待确认。
 
 ### 19.2 person_categories，可选扩展表

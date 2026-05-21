@@ -14,6 +14,7 @@ import {
   exportQueryResultFiles,
   exportQueryResultsExcel,
   exportRecognitionReviewExcel,
+  type QueryResultsExcelExportOptions,
 } from './services/exportService'
 import { queryPeople, type QueryPeopleConditions } from './services/queryService'
 import {
@@ -201,7 +202,11 @@ ipcMain.handle('query:people', async (_event, conditions?: QueryPeopleConditions
   return queryPeople(getDatabase(), conditions)
 })
 
-ipcMain.handle('export:query-results-excel', async (_event, conditions?: QueryPeopleConditions) => {
+ipcMain.handle('export:query-results-excel', async (
+  _event,
+  conditions?: QueryPeopleConditions,
+  options?: QueryResultsExcelExportOptions,
+) => {
   const result = win
     ? await dialog.showSaveDialog(win, {
         title: '导出查询结果',
@@ -218,7 +223,7 @@ ipcMain.handle('export:query-results-excel', async (_event, conditions?: QueryPe
     return null
   }
 
-  return exportQueryResultsExcel(getDatabase(), conditions ?? {}, result.filePath)
+  return exportQueryResultsExcel(getDatabase(), conditions ?? {}, result.filePath, options ?? {})
 })
 
 ipcMain.handle('export:query-result-files', async (_event, conditions?: QueryPeopleConditions) => {

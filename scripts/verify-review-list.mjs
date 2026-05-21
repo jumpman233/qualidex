@@ -13,6 +13,7 @@ const tempElectronApp = path.join(tempRoot, 'electron-app')
 const modules = [
   ['electron/db/schema.ts', 'electron/db/schema.js'],
   ['electron/db/connection.ts', 'electron/db/connection.js'],
+  ['electron/services/idCardService.ts', 'electron/services/idCardService.js'],
   ['electron/services/reviewService.ts', 'electron/services/reviewService.js'],
 ]
 

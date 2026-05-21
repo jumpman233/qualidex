@@ -61,8 +61,8 @@ contextBridge.exposeInMainWorld('qualidex', {
   queryPeople(conditions: unknown) {
     return ipcRenderer.invoke('query:people', conditions)
   },
-  exportQueryResultsExcel(conditions: unknown) {
-    return ipcRenderer.invoke('export:query-results-excel', conditions)
+  exportQueryResultsExcel(conditions: unknown, options?: unknown) {
+    return ipcRenderer.invoke('export:query-results-excel', conditions, options)
   },
   exportQueryResultFiles(conditions: unknown) {
     return ipcRenderer.invoke('export:query-result-files', conditions)

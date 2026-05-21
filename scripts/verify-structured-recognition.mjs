@@ -14,6 +14,7 @@ const modules = [
   ['electron/db/schema.ts', 'electron/db/schema.js'],
   ['electron/db/connection.ts', 'electron/db/connection.js'],
   ['electron/services/aiConfig.ts', 'electron/services/aiConfig.js'],
+  ['electron/services/idCardService.ts', 'electron/services/idCardService.js'],
   ['electron/services/aiExtractService.ts', 'electron/services/aiExtractService.js'],
   ['electron/services/structuredRecognitionService.ts', 'electron/services/structuredRecognitionService.js'],
 ]
@@ -97,7 +98,7 @@ app.whenReady().then(async () => {
         fileName: '张三二建证.pdf',
         originalPath: 'fixture/张三二建证.pdf',
         parentFolder: '张三',
-        ocrText: '姓名 张三 后四位 1234 二级建造师 注册证书',
+        ocrText: '姓名 张三 身份证号 110101199003071234 二级建造师 注册证书',
         defaultPrimaryCategory: '工程',
         defaultRegion: '成都',
       };
@@ -125,7 +126,7 @@ app.whenReady().then(async () => {
         originalPath: 'fixture/张三安全员证.txt',
       }, highConfidenceResult, []);
       assertEqual(second.personId, first.personId, 'same name and id last4 should reuse person');
-      assertEqual(second.personMatchStrategy, 'name_id_last4', 'second person strategy');
+      assertEqual(second.personMatchStrategy, 'id_card_hash', 'second person strategy');
 
       seedFile(db, 'file-3', '李四证书.txt');
       const lowConfidenceResult = createResult({
@@ -165,6 +166,7 @@ app.whenReady().then(async () => {
         fileId: 'file-4',
         fileName: '张三冲突.txt',
         originalPath: 'fixture/张三冲突.txt',
+        ocrText: '姓名 张三 消防员 地区 重庆',
       }, conflictResult, []);
       assert(conflict.personId, 'conflict should create a pending person');
       assertEqual(conflict.personMatchStrategy, 'person_merge_conflict', 'conflict strategy');
@@ -182,6 +184,12 @@ app.whenReady().then(async () => {
       assert(reviewCount >= 3, 'review item count');
       assertEqual(dirtyCount, 3, 'archive dirty people');
       assertEqual(multiPersonCount, 0, 'multi-person file count');
+
+      const zhangSan = db.prepare("select id_card_number, id_card_last4, id_card_hash, masked_display from people where id = @id").get({ id: first.personId });
+      assertEqual(zhangSan.id_card_number, '110101199003071234', 'full id card number');
+      assertEqual(zhangSan.id_card_last4, '1234', 'id card last4');
+      assert(zhangSan.id_card_hash && zhangSan.id_card_hash.length === 64, 'id card hash should be sha256');
+      assertEqual(zhangSan.masked_display, '1101**********1234', 'masked display');
 
       const license = db.prepare("select normalized_license_name, detected_categories, needs_review, recognition_status, official_status, official_status_source from licenses where file_id = 'file-1'").get();
       assertEqual(license.normalized_license_name, '二级建造师', 'normalized license name');
@@ -229,6 +237,7 @@ function createResult(options) {
     person: {
       name: options.name,
       id_card_last4: options.idCardLast4,
+      masked_display: options.idCardLast4 ? '1101**********' + options.idCardLast4 : null,
     },
     region: {
       value: options.region,
