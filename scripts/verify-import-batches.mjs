@@ -17,6 +17,7 @@ const modules = [
   ['electron/db/connection.ts', 'electron/db/connection.js'],
   ['electron/services/hashService.ts', 'electron/services/hashService.js'],
   ['electron/services/fileScanner.ts', 'electron/services/fileScanner.js'],
+  ['electron/services/pathSemanticService.ts', 'electron/services/pathSemanticService.js'],
   ['electron/services/ocrService.ts', 'electron/services/ocrService.js'],
   ['electron/services/pdfRasterService.ts', 'electron/services/pdfRasterService.js'],
   ['electron/services/textExtractService.ts', 'electron/services/textExtractService.js'],
@@ -119,6 +120,24 @@ delete process.env.AI_USE_JSON_RESPONSE_FORMAT;
 
 app.whenReady().then(async () => {
   try {
+    const legacyDbPath = ${JSON.stringify(path.join(tempRoot, 'legacy.sqlite'))};
+    createLegacyDatabase(legacyDbPath);
+    const migratedDb = openQualidexDatabase(legacyDbPath);
+    try {
+      const fileColumns = migratedDb.prepare('PRAGMA table_info(files)').all().map((row) => row.name);
+      assert(fileColumns.includes('folder_merge_key'), 'legacy files table migrated folder_merge_key');
+      assert(fileColumns.includes('folder_merge_result'), 'legacy files table migrated folder_merge_result');
+      assert(fileColumns.includes('folder_merge_confidence'), 'legacy files table migrated folder_merge_confidence');
+      assert(fileColumns.includes('path_parse_result'), 'legacy files table migrated path_parse_result');
+      const folderMergeIndexes = migratedDb
+        .prepare("PRAGMA index_list('files')")
+        .all()
+        .filter((row) => row.name === 'idx_files_folder_merge_key');
+      assertEqual(folderMergeIndexes.length, 1, 'legacy files table folder merge index');
+    } finally {
+      migratedDb.close();
+    }
+
     const db = openQualidexDatabase(${JSON.stringify(path.join(tempRoot, 'qualidex.sqlite'))});
 
     try {
@@ -196,8 +215,11 @@ app.whenReady().then(async () => {
       assert(Boolean(nestedFile), 'nested file row exists');
       assertEqual(nestedFile.relative_path, ${JSON.stringify(path.join('工程', '成都', 'beta.txt'))}, 'relative path');
       assertEqual(JSON.parse(nestedFile.path_segments).join('/'), '工程/成都/beta.txt', 'path segments');
-      assertEqual(nestedFile.path_parse_result, null, 'path parse result placeholder');
-      assertEqual(nestedFile.path_confidence, null, 'path confidence placeholder');
+      const pathParseResult = JSON.parse(nestedFile.path_parse_result);
+      assertEqual(pathParseResult.candidate_primary_category, '工程', 'path primary category');
+      assertEqual(pathParseResult.candidate_region, '成都', 'path region');
+      assert(pathParseResult.evidence.some((item) => item.includes('工程')), 'path evidence category');
+      assert(nestedFile.path_confidence > 0, 'path confidence recorded');
 
       const fileCount = db.prepare('select count(*) as count from files').get().count;
       const duplicateCount = db
@@ -247,6 +269,39 @@ async function assertRejects(fn, message) {
   }
 
   throw new Error('Assertion failed: ' + message);
+}
+
+function createLegacyDatabase(databasePath) {
+  const Database = require('better-sqlite3');
+  const db = new Database(databasePath);
+  try {
+    db.exec(\`
+      CREATE TABLE files (
+        id TEXT PRIMARY KEY,
+        original_path TEXT NOT NULL,
+        file_name TEXT NOT NULL,
+        ext TEXT,
+        size_bytes INTEGER,
+        sha256 TEXT,
+        mime_type TEXT,
+        source_batch_id TEXT,
+        source_root_path TEXT,
+        parent_folder TEXT,
+        ocr_text TEXT,
+        ocr_status TEXT,
+        process_status TEXT,
+        process_error TEXT,
+        archive_status TEXT DEFAULT 'pending',
+        is_multi_person_file INTEGER DEFAULT 0,
+        deleted_at TEXT,
+        deleted_reason TEXT,
+        created_at TEXT,
+        updated_at TEXT
+      );
+    \`);
+  } finally {
+    db.close();
+  }
 }
 `
 }

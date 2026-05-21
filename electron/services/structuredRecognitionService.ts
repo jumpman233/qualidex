@@ -2,6 +2,7 @@ import type Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import type { AiExtractionInput, AiExtractionResult, AiLicenseResult } from './aiExtractService'
 import { extractIdCardNumbers, type NormalizedIdCard } from './idCardService'
+import type { PathSemanticResult } from './pathSemanticService'
 
 export interface StructuredRecognitionPersistResult {
   personId: string | null
@@ -29,6 +30,7 @@ interface FolderFileRow {
   source_root_path: string | null
   parent_folder: string | null
   relative_path: string | null
+  path_parse_result: string | null
   ocr_text: string | null
   ai_result_json: string | null
   person_id: string | null
@@ -66,6 +68,7 @@ export function persistStructuredRecognition(
   const localIdCards = extractIdCardNumbers(input.ocrText)
   const localIdCard = localIdCards.length === 1 ? localIdCards[0] : null
   const folderMergeContext = analyzeFolderMergeContext(db, input.fileId, result, localIdCards)
+  const pathReviewReasons = collectPathReviewReasons(db, input.fileId, result)
   const personMatch = resolvePerson(db, result, localIdCard, folderMergeContext.anchorPerson, now)
 
   updateFileMultiPersonFlag(db, input.fileId, result.multi_person.is_multi_person_file, now)
@@ -86,6 +89,7 @@ export function persistStructuredRecognition(
     reviewReasons,
     localIdCards,
     folderMergeContext.reviewReasons,
+    pathReviewReasons,
   )
   persistStructuredReviewItems(db, input.fileId, structuredReviewReasons, result, now)
 
@@ -687,6 +691,58 @@ function insertLicense(
   return id
 }
 
+function collectPathReviewReasons(
+  db: Database.Database,
+  fileId: string,
+  result: AiExtractionResult,
+): string[] {
+  const currentFile = readFolderFile(db, fileId)
+  const pathResult = parsePathResult(currentFile?.path_parse_result ?? null)
+  if (!pathResult || pathResult.confidence < 0.45) {
+    return []
+  }
+
+  const reasons = new Set<string>()
+  const pathCategory = normalizeOptionalText(pathResult.candidate_primary_category)
+  const resultCategory = normalizeOptionalText(result.category.primary_value)
+  const pathRegion = normalizeOptionalText(pathResult.candidate_region)
+  const resultRegion = normalizeOptionalText(result.region.value)
+  const pathPersonName = normalizeOptionalText(pathResult.candidate_person_name)
+  const resultPersonName = normalizeOptionalText(result.person.name)
+  const pathDocumentType = normalizeOptionalText(pathResult.candidate_document_type)
+  const resultDocumentType = normalizeOptionalText(result.document_type)
+
+  if (pathCategory && resultCategory && pathCategory !== resultCategory) {
+    reasons.add('路径类别与识别结果冲突')
+  }
+  if (pathRegion && resultRegion && pathRegion !== resultRegion) {
+    reasons.add('路径地区与识别结果冲突')
+  }
+  if (pathPersonName && resultPersonName && pathPersonName !== resultPersonName) {
+    reasons.add('路径人员与识别结果冲突')
+  }
+  if (pathDocumentType && resultDocumentType && resultDocumentType !== 'unknown' && pathDocumentType !== resultDocumentType) {
+    reasons.add('路径资料类型与识别结果冲突')
+  }
+  if (pathPersonName && result.multi_person.is_multi_person_file) {
+    reasons.add('路径显示单人目录但识别为多人员资料')
+  }
+
+  return [...reasons]
+}
+
+function parsePathResult(value: string | null): PathSemanticResult | null {
+  if (!value) {
+    return null
+  }
+
+  try {
+    return JSON.parse(value) as PathSemanticResult
+  } catch {
+    return null
+  }
+}
+
 function analyzeFolderMergeContext(
   db: Database.Database,
   fileId: string,
@@ -788,6 +844,7 @@ function readFolderFile(db: Database.Database, fileId: string): FolderFileRow | 
       files.source_root_path,
       files.parent_folder,
       files.relative_path,
+      files.path_parse_result,
       files.ocr_text,
       NULL AS ai_result_json,
       NULL AS person_id,
@@ -814,6 +871,7 @@ function readFolderFiles(db: Database.Database, currentFile: FolderFileRow): Fol
       files.source_root_path,
       files.parent_folder,
       files.relative_path,
+      files.path_parse_result,
       files.ocr_text,
       ai_latest.result_json AS ai_result_json,
       people.id AS person_id,
@@ -990,6 +1048,7 @@ function collectStructuredReviewReasons(
   reviewReasons: string[],
   localIdCards: NormalizedIdCard[],
   folderMergeReviewReasons: string[],
+  pathReviewReasons: string[],
 ): string[] {
   const reasons = new Set<string>()
 
@@ -1020,6 +1079,9 @@ function collectStructuredReviewReasons(
     reasons.add(reason)
   }
   for (const reason of folderMergeReviewReasons) {
+    reasons.add(reason)
+  }
+  for (const reason of pathReviewReasons) {
     reasons.add(reason)
   }
 
@@ -1112,6 +1174,18 @@ function reviewStatusForResult(result: AiExtractionResult): string {
 }
 
 function toReviewItemType(reason: string): string {
+  if (reason.includes('路径类别')) {
+    return 'path_category_conflict'
+  }
+  if (reason.includes('路径地区')) {
+    return 'path_region_conflict'
+  }
+  if (reason.includes('路径人员') || reason.includes('单人目录')) {
+    return 'path_person_conflict'
+  }
+  if (reason.includes('路径资料类型')) {
+    return 'path_ocr_conflict'
+  }
   if (reason.includes('归并冲突') || reason.includes('身份证号')) {
     return 'person_merge_conflict'
   }
@@ -1131,4 +1205,9 @@ function toReviewItemType(reason: string): string {
     return 'multi_person_file'
   }
   return 'ai_uncertain'
+}
+
+function normalizeOptionalText(value: string | null | undefined): string | null {
+  const normalized = value?.trim()
+  return normalized ? normalized : null
 }

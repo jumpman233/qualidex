@@ -37,6 +37,12 @@ contextBridge.exposeInMainWorld('qualidex', {
   listReviewItems(limit?: number) {
     return ipcRenderer.invoke('review:list-items', limit)
   },
+  openReviewSourceFile(reviewItemId: string) {
+    return ipcRenderer.invoke('review:open-source-file', reviewItemId)
+  },
+  openReviewSourceFolder(reviewItemId: string) {
+    return ipcRenderer.invoke('review:open-source-folder', reviewItemId)
+  },
   confirmReviewItem(reviewItemId: string, confirmedValue?: string | null) {
     return ipcRenderer.invoke('review:confirm-item', reviewItemId, confirmedValue)
   },

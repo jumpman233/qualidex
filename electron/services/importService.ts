@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 import { type ScannedFile, scanDirectory, type ScanError } from './fileScanner'
 import { calculateFileSha256 } from './hashService'
+import { parsePathSemantics, splitPathSegments } from './pathSemanticService'
 import { createProcessingTask } from './processingQueueService'
 
 export interface ImportedFile extends ScannedFile {
@@ -275,6 +276,14 @@ export async function importDirectory(
       const importStatus = existingHash ? 'duplicate' : 'new'
       const parentFolder = path.dirname(file.relativePath)
       const folderMergeKey = buildFolderMergeKey(batchId, scanResult.rootPath, parentFolder)
+      const pathSemantic = parsePathSemantics({
+        sourceRootPath: scanResult.rootPath,
+        relativePath: file.relativePath,
+        fileName: file.name,
+        parentFolder,
+        defaultPrimaryCategory: options.defaultPrimaryCategory,
+        defaultRegion: options.defaultRegion,
+      })
 
       if (existingHash) {
         duplicateFiles += 1
@@ -309,9 +318,9 @@ export async function importDirectory(
         relativePath: file.relativePath,
         parentFolder,
         folderMergeKey,
-        pathSegments: JSON.stringify(getPathSegments(file.relativePath)),
-        pathParseResult: null,
-        pathConfidence: null,
+        pathSegments: JSON.stringify(splitPathSegments(file.relativePath)),
+        pathParseResult: JSON.stringify(pathSemantic),
+        pathConfidence: pathSemantic.confidence,
         ocrText: null,
         ocrStatus: 'pending',
         processStatus: 'pending_ocr',
@@ -411,10 +420,6 @@ function getErrorMessage(error: unknown): string {
   }
 
   return String(error)
-}
-
-function getPathSegments(relativePath: string): string[] {
-  return relativePath.split(path.sep).filter(Boolean)
 }
 
 function buildFolderMergeKey(batchId: string, sourceRootPath: string, parentFolder: string): string {

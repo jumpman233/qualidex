@@ -13,10 +13,16 @@ export interface ReviewItemSummary {
   fileId: string | null
   fileName: string | null
   sourcePath: string | null
+  parentFolder: string | null
+  relativePath: string | null
+  pathParseResult: string | null
+  folderMergeResult: string | null
   processStatus: string | null
   ocrStatus: string | null
+  ocrText: string | null
   ocrTextPreview: string | null
   aiStatus: string | null
+  aiResultJson: string | null
   aiSummary: string | null
   personId: string | null
   personName: string | null
@@ -89,6 +95,10 @@ interface ReviewItemRow {
   file_id: string | null
   file_name: string | null
   original_path: string | null
+  parent_folder: string | null
+  relative_path: string | null
+  path_parse_result: string | null
+  folder_merge_result: string | null
   process_status: string | null
   ocr_status: string | null
   ocr_text: string | null
@@ -181,6 +191,10 @@ export function listReviewItems(
       files.id AS file_id,
       files.file_name,
       files.original_path,
+      files.parent_folder,
+      files.relative_path,
+      files.path_parse_result,
+      files.folder_merge_result,
       files.process_status,
       files.ocr_status,
       files.ocr_text,
@@ -887,6 +901,10 @@ function readReviewItemRowsById(db: Database.Database, reviewItemId: string): Re
       files.id AS file_id,
       files.file_name,
       files.original_path,
+      files.parent_folder,
+      files.relative_path,
+      files.path_parse_result,
+      files.folder_merge_result,
       files.process_status,
       files.ocr_status,
       files.ocr_text,
@@ -1407,10 +1425,16 @@ function toReviewItemSummary(row: ReviewItemRow): ReviewItemSummary {
     fileId: row.file_id,
     fileName: row.file_name,
     sourcePath: row.original_path,
+    parentFolder: row.parent_folder,
+    relativePath: row.relative_path,
+    pathParseResult: row.path_parse_result,
+    folderMergeResult: row.folder_merge_result,
     processStatus: row.process_status,
     ocrStatus: row.ocr_status,
+    ocrText: row.ocr_text,
     ocrTextPreview: createPreview(row.ocr_text),
     aiStatus: row.ai_status,
+    aiResultJson: row.ai_result_json,
     aiSummary: createAiSummary(row.ai_result_json, row.ai_error),
     personId: row.person_id,
     personName: row.person_name,

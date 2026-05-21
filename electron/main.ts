@@ -49,6 +49,10 @@ import {
   type MergePeopleInput,
   type ReviewFieldPatch,
 } from './services/reviewService'
+import {
+  openReviewItemSourceFile,
+  openReviewItemSourceFolder,
+} from './services/sourceFileOpenService'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -168,6 +172,14 @@ ipcMain.handle('archive:write', async (_event, outputRoot: string) => {
 
 ipcMain.handle('review:list-items', async (_event, limit?: number) => {
   return listReviewItems(getDatabase(), limit)
+})
+
+ipcMain.handle('review:open-source-file', async (_event, reviewItemId: string) => {
+  return openReviewItemSourceFile(getDatabase(), reviewItemId)
+})
+
+ipcMain.handle('review:open-source-folder', async (_event, reviewItemId: string) => {
+  return openReviewItemSourceFolder(getDatabase(), reviewItemId)
 })
 
 ipcMain.handle('review:confirm-item', async (_event, reviewItemId: string, confirmedValue?: string | null) => {

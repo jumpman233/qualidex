@@ -32,6 +32,10 @@ interface FileTaskRow {
   file_name: string
   ext: string | null
   parent_folder: string | null
+  source_root_path: string | null
+  relative_path: string | null
+  path_segments: string | null
+  path_parse_result: string | null
   ocr_text: string | null
   sha256: string | null
   process_status: string | null
@@ -214,6 +218,10 @@ async function executeAiExtractTask(
     fileName: file.file_name,
     originalPath: file.original_path,
     parentFolder: file.parent_folder ?? '',
+    sourceRootPath: file.source_root_path,
+    relativePath: file.relative_path,
+    pathSegments: parsePathSegments(file.path_segments),
+    pathParseResult: file.path_parse_result,
     ocrText: file.ocr_text,
     defaultPrimaryCategory: file.default_primary_category,
     defaultRegion: file.default_region,
@@ -264,6 +272,10 @@ function getFileForTask(db: Database.Database, fileId: string): FileTaskRow | nu
       files.file_name,
       files.ext,
       files.parent_folder,
+      files.source_root_path,
+      files.relative_path,
+      files.path_segments,
+      files.path_parse_result,
       files.ocr_text,
       files.sha256,
       files.process_status,
@@ -277,6 +289,21 @@ function getFileForTask(db: Database.Database, fileId: string): FileTaskRow | nu
   `).get(fileId) as FileTaskRow | undefined
 
   return row ?? null
+}
+
+function parsePathSegments(value: string | null): string[] {
+  if (!value) {
+    return []
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === 'string')
+      : []
+  } catch {
+    return []
+  }
 }
 
 function getUnprocessableFileReason(file: FileTaskRow): string | null {

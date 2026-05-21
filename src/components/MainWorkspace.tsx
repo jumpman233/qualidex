@@ -1,4 +1,20 @@
-import { Eye, Folder, Download, CheckCircle2, Search, Sparkles, MapPin, UserRound, AlertTriangle } from 'lucide-react'
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Download,
+  Eye,
+  FileText,
+  Folder,
+  HelpCircle,
+  MapPin,
+  PlusCircle,
+  RefreshCw,
+  Search,
+  Sparkles,
+  UserRound,
+} from 'lucide-react'
 import { useEffect, useState } from 'react'
 import {
   exportItems,
@@ -11,10 +27,41 @@ interface MainWorkspaceProps {
   onModeChange(mode: WorkspaceMode): void
 }
 
-interface NewPersonDraft {
-  name: string
-  idCardNumber: string
-  idCardLast4: string
+type ReviewFilter = 'all' | 'person_conflict' | 'education_unknown' | 'license_review' | 'region_unknown' | 'multi_person' | 'failed'
+
+interface ReviewPersonCertificate {
+  certificateName: string | null
+  certificateSpecialty: string | null
+  displayName: string | null
+  confidence: number | null
+  evidence: string[]
+}
+
+interface ReviewPersonFile {
+  reviewItemId: string
+  fileName: string
+  relativePath: string
+  originalPath: string | null
+  relationType: 'owner' | 'mentioned' | 'multi_person' | 'uncertain'
+  relationConfidence: number
+  evidence: string[]
+  ocrText: string | null
+}
+
+interface ReviewPersonCandidate {
+  id: string
+  reviewItemIds: string[]
+  personName: string | null
+  idCardNumber: string | null
+  idCardMaskedDisplay: string | null
+  education: string | null
+  region: string | null
+  certificates: ReviewPersonCertificate[]
+  confidence: number
+  needsReview: boolean
+  reviewReasons: string[]
+  tags: string[]
+  files: ReviewPersonFile[]
 }
 
 export function MainWorkspace({ mode, onModeChange }: MainWorkspaceProps) {
@@ -23,7 +70,7 @@ export function MainWorkspace({ mode, onModeChange }: MainWorkspaceProps) {
   }
 
   if (mode === 'import') {
-    return <ImportWorkspace />
+    return <ImportWorkspace onModeChange={onModeChange} />
   }
 
   if (mode === 'review') {
@@ -234,7 +281,7 @@ function SearchWorkspace() {
   )
 }
 
-function ImportWorkspace() {
+function ImportWorkspace({ onModeChange }: { onModeChange(mode: WorkspaceMode): void }) {
   const [selectedDirectory, setSelectedDirectory] = useState('')
   const [importResult, setImportResult] = useState<DirectoryScanResult | null>(null)
   const [tasks, setTasks] = useState<ProcessingTaskSummary[]>([])
@@ -244,6 +291,7 @@ function ImportWorkspace() {
   const [isRunningBatch, setIsRunningBatch] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
   const [taskError, setTaskError] = useState<string | null>(null)
+  const [postProcessingReviewCount, setPostProcessingReviewCount] = useState<number | null>(null)
 
   async function refreshTasks() {
     try {
@@ -281,6 +329,7 @@ function ImportWorkspace() {
     setIsImporting(true)
     setImportError(null)
     setBatchResult(null)
+    setPostProcessingReviewCount(null)
 
     try {
       const result = await window.qualidex.scanDirectory(directory)
@@ -301,6 +350,12 @@ function ImportWorkspace() {
     try {
       const result = await window.qualidex.runProcessingBatch(10)
       setBatchResult(result)
+      if (result.remainingPendingTasks === 0) {
+        const pendingReviewItems = await window.qualidex.listReviewItems(200)
+        setPostProcessingReviewCount(pendingReviewItems.length)
+      } else {
+        setPostProcessingReviewCount(null)
+      }
       await refreshTasks()
     } catch (error) {
       setBatchResult(null)
@@ -435,6 +490,25 @@ function ImportWorkspace() {
             </article>
           </div>
         ) : null}
+        {batchResult && batchResult.remainingPendingTasks === 0 ? (
+          <div className="import-next-action">
+            <div>
+              <strong>{postProcessingReviewCount && postProcessingReviewCount > 0 ? '需要人工确认' : '可以生成归档预览'}</strong>
+              <span>
+                {postProcessingReviewCount && postProcessingReviewCount > 0
+                  ? `发现 ${postProcessingReviewCount} 条待确认资料，处理后再生成归档更稳。`
+                  : '当前没有待处理任务，可进入归档预览继续检查输出路径。'}
+              </span>
+            </div>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => onModeChange(postProcessingReviewCount && postProcessingReviewCount > 0 ? 'review' : 'export')}
+            >
+              {postProcessingReviewCount && postProcessingReviewCount > 0 ? '查看待确认资料' : '生成归档预览'}
+            </button>
+          </div>
+        ) : null}
         <div className="task-list">
           {tasks.length > 0 ? (
             tasks.map((task) => (
@@ -514,21 +588,25 @@ function statusTone(status: string | null | undefined): string {
 
 function ReviewWorkspace() {
   const [items, setItems] = useState<ReviewItemSummary[]>([])
-  const [fieldDrafts, setFieldDrafts] = useState<Record<string, ReviewFieldPatch>>({})
-  const [personCandidates, setPersonCandidates] = useState<PersonCandidateSummary[]>([])
-  const [personDrafts, setPersonDrafts] = useState<Record<string, string>>({})
-  const [newPersonDrafts, setNewPersonDrafts] = useState<Record<string, NewPersonDraft>>({})
-  const [mergeTargetPersonId, setMergeTargetPersonId] = useState('')
-  const [mergeSourcePersonId, setMergeSourcePersonId] = useState('')
-  const [mergeResult, setMergeResult] = useState<MergePeopleResult | null>(null)
+  const [filter, setFilter] = useState<ReviewFilter>('all')
+  const [query, setQuery] = useState('')
+  const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null)
+  const [expandedPersonIds, setExpandedPersonIds] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [activeReviewItemId, setActiveReviewItemId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     void loadReviewItems()
-    void loadPersonCandidates()
   }, [])
+
+  const reviewPeople = createReviewPeople(items)
+  const filteredPeople = reviewPeople.filter((person) => matchesReviewFilter(person, filter, query))
+  const selectedPerson = selectedPersonId
+    ? reviewPeople.find((person) => person.id === selectedPersonId) ?? null
+    : null
+  const filterOptions = createReviewFilterOptions(reviewPeople)
+  const isReviewActionBusy = Boolean(activeReviewItemId)
 
   async function loadReviewItems() {
     setIsLoading(true)
@@ -537,43 +615,31 @@ function ReviewWorkspace() {
     try {
       const nextItems = await window.qualidex.listReviewItems(30)
       setItems(nextItems)
-      setFieldDrafts(createReviewFieldDrafts(nextItems))
-      setPersonDrafts(createPersonDrafts(nextItems))
-      setNewPersonDrafts(createNewPersonDrafts(nextItems))
     } catch (nextError) {
       setItems([])
-      setFieldDrafts({})
-      setPersonDrafts({})
-      setNewPersonDrafts({})
       setError(nextError instanceof Error ? nextError.message : String(nextError))
     } finally {
       setIsLoading(false)
     }
   }
 
-  async function loadPersonCandidates() {
-    try {
-      const nextCandidates = await window.qualidex.listPersonCandidates('', 120)
-      setPersonCandidates(nextCandidates)
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : String(nextError))
-    }
-  }
-
-  async function handleConfirmReviewItem(item: ReviewItemSummary) {
-    setActiveReviewItemId(item.id)
+  async function handleConfirmPerson(person: ReviewPersonCandidate) {
+    setActiveReviewItemId(person.id)
     setError(null)
 
     try {
       const confirmedValue = JSON.stringify({
-        personName: item.personName,
-        primaryCategory: item.primaryCategory,
-        region: item.region,
-        documentType: item.documentType,
-        licenseName: item.licenseName,
+        personName: person.personName,
+        idCardNumber: person.idCardNumber,
+        education: person.education,
+        certificates: person.certificates,
+        files: person.files,
       })
-      await window.qualidex.confirmReviewItem(item.id, confirmedValue)
+      await Promise.all(person.reviewItemIds.map((reviewItemId) => (
+        window.qualidex.confirmReviewItem(reviewItemId, confirmedValue)
+      )))
       await loadReviewItems()
+      setSelectedPersonId(null)
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : String(nextError))
     } finally {
@@ -581,13 +647,16 @@ function ReviewWorkspace() {
     }
   }
 
-  async function handleIgnoreReviewItem(item: ReviewItemSummary) {
-    setActiveReviewItemId(item.id)
+  async function handleIgnorePerson(person: ReviewPersonCandidate) {
+    setActiveReviewItemId(person.id)
     setError(null)
 
     try {
-      await window.qualidex.ignoreReviewItem(item.id, item.reason ?? '人工忽略')
+      await Promise.all(person.reviewItemIds.map((reviewItemId) => (
+        window.qualidex.ignoreReviewItem(reviewItemId, '人工跳过人员确认')
+      )))
       await loadReviewItems()
+      setSelectedPersonId(null)
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : String(nextError))
     } finally {
@@ -595,41 +664,15 @@ function ReviewWorkspace() {
     }
   }
 
-  function updateFieldDraft(reviewItemId: string, patch: ReviewFieldPatch) {
-    setFieldDrafts((current) => ({
-      ...current,
-      [reviewItemId]: {
-        ...current[reviewItemId],
-        ...patch,
-      },
-    }))
-  }
-
-  function updatePersonDraft(reviewItemId: string, personId: string) {
-    setPersonDrafts((current) => ({
-      ...current,
-      [reviewItemId]: personId,
-    }))
-  }
-
-  function updateNewPersonDraft(reviewItemId: string, patch: Partial<NewPersonDraft>) {
-    setNewPersonDrafts((current) => ({
-      ...current,
-      [reviewItemId]: {
-        ...current[reviewItemId],
-        ...patch,
-      },
-    }))
-  }
-
-  async function handleSaveReviewFields(item: ReviewItemSummary) {
-    const draft = fieldDrafts[item.id] ?? {}
-    setActiveReviewItemId(item.id)
+  async function handleOpenSourceFile(file: ReviewPersonFile) {
+    setActiveReviewItemId(file.reviewItemId)
     setError(null)
 
     try {
-      await window.qualidex.updateReviewFields(item.id, draft)
-      await loadReviewItems()
+      const result = await window.qualidex.openReviewSourceFile(file.reviewItemId)
+      if (!result.opened) {
+        setError(result.error ?? '无法打开原始文件。')
+      }
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : String(nextError))
     } finally {
@@ -637,19 +680,15 @@ function ReviewWorkspace() {
     }
   }
 
-  async function handleReassignPerson(item: ReviewItemSummary) {
-    const personId = personDrafts[item.id]
-    if (!personId) {
-      setError('请先选择要关联的人员。')
-      return
-    }
-
-    setActiveReviewItemId(item.id)
+  async function handleOpenSourceFolder(file: ReviewPersonFile) {
+    setActiveReviewItemId(file.reviewItemId)
     setError(null)
 
     try {
-      await window.qualidex.reassignReviewPerson(item.id, personId)
-      await loadReviewItems()
+      const result = await window.qualidex.openReviewSourceFolder(file.reviewItemId)
+      if (!result.opened) {
+        setError(result.error ?? '无法打开原始文件夹。')
+      }
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : String(nextError))
     } finally {
@@ -657,292 +696,255 @@ function ReviewWorkspace() {
     }
   }
 
-  async function handleCreatePerson(item: ReviewItemSummary) {
-    const draft = newPersonDrafts[item.id] ?? { name: '', idCardNumber: '', idCardLast4: '' }
-    if (!draft.name.trim()) {
-      setError('请先填写新人员姓名。')
-      return
-    }
-
-    setActiveReviewItemId(item.id)
-    setError(null)
-
-    try {
-      await window.qualidex.createPersonFromReview(item.id, {
-        name: draft.name,
-        idCardNumber: draft.idCardNumber,
-        idCardLast4: draft.idCardLast4,
-        primaryCategory: fieldDrafts[item.id]?.primaryCategory ?? item.primaryCategory,
-        region: fieldDrafts[item.id]?.region ?? item.region,
-      })
-      await loadReviewItems()
-      await loadPersonCandidates()
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : String(nextError))
-    } finally {
-      setActiveReviewItemId(null)
-    }
-  }
-
-  async function handleMergePeople() {
-    if (!mergeTargetPersonId || !mergeSourcePersonId) {
-      setError('请先选择保留人员和要合并的人员。')
-      return
-    }
-
-    setActiveReviewItemId('people-merge')
-    setError(null)
-    setMergeResult(null)
-
-    try {
-      const result = await window.qualidex.mergePeople({
-        targetPersonId: mergeTargetPersonId,
-        sourcePersonIds: [mergeSourcePersonId],
-        reason: '待确认工作台手动合并',
-      })
-      setMergeResult(result)
-      setMergeSourcePersonId('')
-      await loadReviewItems()
-      await loadPersonCandidates()
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : String(nextError))
-    } finally {
-      setActiveReviewItemId(null)
-    }
+  function togglePersonFiles(personId: string) {
+    setExpandedPersonIds((current) => current.includes(personId)
+      ? current.filter((item) => item !== personId)
+      : [...current, personId])
   }
 
   return (
-    <section className="workspace-panel">
-      <div className="section-heading inline-heading">
-        <div>
-          <h2>待确认资料</h2>
-          <p>集中处理低置信度、字段缺失和人员归并冲突；确认或忽略都会记录操作日志。</p>
-        </div>
-        <button type="button" className="primary-button" onClick={loadReviewItems} disabled={isLoading}>
-          <CheckCircle2 size={18} />
-          {isLoading ? '刷新中' : '刷新待确认'}
-        </button>
-      </div>
+    <section className="review-workspace">
       {error ? (
         <div className="risk-note">
           <AlertTriangle size={18} />
           {error}
         </div>
       ) : null}
-      <div className="review-merge-panel">
-        <label>
-          <span>保留人员</span>
-          <select value={mergeTargetPersonId} onChange={(event) => setMergeTargetPersonId(event.target.value)}>
-            <option value="">待选择</option>
-            {personCandidates.map((person) => (
-              <option key={person.id} value={person.id}>
-                {personCandidateLabel(person)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span>合并人员</span>
-          <select value={mergeSourcePersonId} onChange={(event) => setMergeSourcePersonId(event.target.value)}>
-            <option value="">待选择</option>
-            {personCandidates
-              .filter((person) => person.id !== mergeTargetPersonId)
-              .map((person) => (
-                <option key={person.id} value={person.id}>
-                  {personCandidateLabel(person)}
-                </option>
+
+      {selectedPerson ? (
+        <article className="review-detail-shell">
+          <div className="review-detail-topbar">
+            <button type="button" className="review-back-button" onClick={() => setSelectedPersonId(null)}>
+              <ChevronRight size={18} />
+              返回列表
+            </button>
+            <span>第 {reviewPeople.findIndex((person) => person.id === selectedPerson.id) + 1} / {reviewPeople.length} 条</span>
+          </div>
+          <div className="review-person-detail-card">
+            <div className="review-person-detail-header">
+              <h2>人员确认卡</h2>
+              <span className="review-status-badge">待确认</span>
+              <HelpCircle size={20} />
+            </div>
+            <div className="review-person-detail-body">
+              <div className="review-avatar review-avatar-large" aria-hidden="true" />
+              <div className="review-detail-fields">
+                <label>
+                  <span>姓名</span>
+                  <input value={selectedPerson.personName ?? ''} readOnly placeholder="待确认" />
+                </label>
+                <label>
+                  <span>身份证号</span>
+                  <input value={selectedPerson.idCardNumber ?? selectedPerson.idCardMaskedDisplay ?? ''} readOnly placeholder="待确认" />
+                </label>
+                <label>
+                  <span>学历</span>
+                  <input value={selectedPerson.education ?? ''} readOnly placeholder="请输入学历" />
+                </label>
+              </div>
+              <div className="review-detail-confidence">
+                <span>置信度：</span>
+                <strong className={confidenceToneClass(selectedPerson.confidence)}>{formatPercent(selectedPerson.confidence)}</strong>
+              </div>
+            </div>
+
+            <section className="review-certificate-editor">
+              <div className="review-subheading">
+                <h3>证书信息</h3>
+                <span>({selectedPerson.certificates.length})</span>
+              </div>
+              {selectedPerson.certificates.length > 0 ? (
+                selectedPerson.certificates.map((certificate, index) => (
+                  <div key={`${certificate.displayName ?? 'certificate'}-${index}`} className="review-certificate-row">
+                    <label>
+                      <span>证书名称</span>
+                      <input value={certificate.certificateName ?? ''} readOnly placeholder="请选择或输入证书名称" />
+                    </label>
+                    <label>
+                      <span>证书专业</span>
+                      <input value={certificate.certificateSpecialty ?? ''} readOnly placeholder="请选择或输入证书专业" />
+                    </label>
+                  </div>
+                ))
+              ) : (
+                <button type="button" className="review-add-certificate" disabled>
+                  <PlusCircle size={18} />
+                  添加证书（后续支持）
+                </button>
+              )}
+            </section>
+
+            <section className="review-related-files-detail">
+              <div className="review-subheading">
+                <h3>相关文件</h3>
+                <span>({selectedPerson.files.length})</span>
+              </div>
+              {selectedPerson.files.map((file) => (
+                <article key={`${selectedPerson.id}-${file.relativePath}`} className="review-file-detail-card">
+                  <div className="review-file-icon">
+                    <FileText size={26} />
+                  </div>
+                  <div>
+                    <strong>{file.fileName}</strong>
+                    <span>路径：{file.relativePath}</span>
+                  </div>
+                  <div>
+                    <span>关系</span>
+                    <strong>{relationTypeLabel(file.relationType)}</strong>
+                  </div>
+                  <div>
+                    <span>置信度</span>
+                    <strong className={confidenceToneClass(file.relationConfidence)}>{formatPercent(file.relationConfidence)}</strong>
+                  </div>
+                  <button type="button" className="ghost-button" onClick={() => void handleOpenSourceFile(file)}>
+                    <Eye size={17} />
+                    打开文件
+                  </button>
+                  <button type="button" className="ghost-button" onClick={() => void handleOpenSourceFolder(file)}>
+                    <Folder size={17} />
+                    打开所在文件夹
+                  </button>
+                  {file.evidence.length > 0 || file.ocrText ? (
+                    <div className="review-file-evidence">
+                      <strong>识别依据</strong>
+                      <p>{file.evidence[0] ?? createPreviewText(file.ocrText ?? '', 180)}</p>
+                    </div>
+                  ) : null}
+                </article>
               ))}
-          </select>
-        </label>
-        <button
-          type="button"
-          className="ghost-button"
-          onClick={() => void handleMergePeople()}
-          disabled={Boolean(activeReviewItemId)}
-        >
-          {activeReviewItemId === 'people-merge' ? '合并中' : '合并人员'}
-        </button>
-        {mergeResult ? (
-          <small>
-            已合并 {mergeResult.mergedSourcePersonIds.length} 人，转移 {mergeResult.movedDocumentCount} 份资料、
-            {mergeResult.movedLicenseCount} 条证书。
-          </small>
-        ) : null}
-      </div>
-      {items.length > 0 ? (
-        <>
-          <div className="review-summary-row">
-            <strong>{items.length}</strong>
-            <span>条待确认项等待人工处理。当前页面只读展示，不会修改数据库。</span>
+            </section>
+
+            <div className="review-detail-actions">
+              <button type="button" className="ghost-button" onClick={() => void handleIgnorePerson(selectedPerson)}>
+                跳过
+              </button>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() => void handleConfirmPerson(selectedPerson)}
+                disabled={isReviewActionBusy}
+              >
+                确认并保存
+              </button>
+            </div>
           </div>
-          <div className="review-grid">
-            {items.map((item) => (
-              <article key={item.id} className="review-card">
-                <span>{reviewTypeLabel(item.itemType)}</span>
-                <h3>{item.fileName ?? '未知文件'}</h3>
-                <p>{item.reason ?? '需要人工确认'}</p>
-                <small>{item.sourcePath ?? '未关联原始文件路径'}</small>
-                <div className="editable-grid">
-                  <label>
-                    <span>类别</span>
-                    <select
-                      value={fieldDrafts[item.id]?.primaryCategory ?? ''}
-                      onChange={(event) => updateFieldDraft(item.id, { primaryCategory: event.target.value })}
-                    >
-                      <option value="">待确认</option>
-                      <option value="工程">工程</option>
-                      <option value="消防员">消防员</option>
-                      <option value="其他">其他</option>
-                    </select>
-                  </label>
-                  <label>
-                    <span>地区</span>
-                    <input
-                      type="text"
-                      value={fieldDrafts[item.id]?.region ?? ''}
-                      onChange={(event) => updateFieldDraft(item.id, { region: event.target.value })}
-                      placeholder="待确认"
-                    />
-                  </label>
-                  <label>
-                    <span>人员</span>
-                    <select
-                      value={personDrafts[item.id] ?? ''}
-                      onChange={(event) => updatePersonDraft(item.id, event.target.value)}
-                    >
-                      <option value="">待选择</option>
-                      {personCandidates.map((person) => (
-                        <option key={person.id} value={person.id}>
-                          {personCandidateLabel(person)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    <span>新人员姓名</span>
-                    <input
-                      type="text"
-                      value={newPersonDrafts[item.id]?.name ?? ''}
-                      onChange={(event) => updateNewPersonDraft(item.id, { name: event.target.value })}
-                      placeholder="仅在需要新建时填写"
-                    />
-                  </label>
-                  <label>
-                    <span>完整身份证号</span>
-                    <input
-                      type="text"
-                      value={newPersonDrafts[item.id]?.idCardNumber ?? ''}
-                      onChange={(event) => updateNewPersonDraft(item.id, { idCardNumber: event.target.value })}
-                      placeholder="可选，18 位"
-                      maxLength={18}
-                    />
-                  </label>
-                  <label>
-                    <span>身份证后四位</span>
-                    <input
-                      type="text"
-                      value={newPersonDrafts[item.id]?.idCardLast4 ?? ''}
-                      onChange={(event) => updateNewPersonDraft(item.id, { idCardLast4: event.target.value })}
-                      placeholder="可选"
-                      maxLength={4}
-                    />
-                  </label>
-                  <label>
-                    <span>资料类型</span>
-                    <select
-                      value={fieldDrafts[item.id]?.documentType ?? ''}
-                      onChange={(event) => updateFieldDraft(item.id, { documentType: event.target.value })}
-                    >
-                      <option value="">待确认</option>
-                      <option value="id_card">身份证</option>
-                      <option value="diploma">学历</option>
-                      <option value="degree">学位</option>
-                      <option value="license">证书</option>
-                      <option value="other">其他资料</option>
-                    </select>
-                  </label>
-                  <label>
-                    <span>证书</span>
-                    <input
-                      type="text"
-                      value={fieldDrafts[item.id]?.licenseName ?? ''}
-                      onChange={(event) => updateFieldDraft(item.id, { licenseName: event.target.value })}
-                      placeholder="待确认"
-                    />
-                  </label>
-                  <label>
-                    <span>认可状态</span>
-                    <select
-                      value={fieldDrafts[item.id]?.licenseRecognitionStatus ?? ''}
-                      onChange={(event) => updateFieldDraft(item.id, { licenseRecognitionStatus: event.target.value })}
-                    >
-                      <option value="">待确认</option>
-                      <option value="suggested">建议认可</option>
-                      <option value="confirmed">已认可</option>
-                      <option value="pending_review">待确认</option>
-                      <option value="rejected">不认可</option>
-                    </select>
-                  </label>
-                  <label>
-                    <span>状态</span>
-                    <strong>{valueOrPending(item.status)}</strong>
-                  </label>
-                </div>
-                <div className="review-detail-list">
-                  <p>{item.idCardNumber ? `身份证：${item.idCardNumber}` : '身份证：待确认'}</p>
-                  <p>{item.ocrTextPreview ? `OCR：${item.ocrTextPreview}` : 'OCR：暂无文本预览'}</p>
-                  <p>{item.aiSummary ? `AI：${item.aiSummary}` : 'AI：暂无结构化摘要'}</p>
-                </div>
-                <div className="workspace-actions">
-                  <button
-                    type="button"
-                    className="ghost-button"
-                    onClick={() => void handleSaveReviewFields(item)}
-                    disabled={Boolean(activeReviewItemId)}
-                  >
-                    {activeReviewItemId === item.id ? '保存中' : '保存字段'}
-                  </button>
-                  <button
-                    type="button"
-                    className="ghost-button"
-                    onClick={() => void handleReassignPerson(item)}
-                    disabled={Boolean(activeReviewItemId)}
-                  >
-                    {activeReviewItemId === item.id ? '更换中' : '更换人员'}
-                  </button>
-                  <button
-                    type="button"
-                    className="ghost-button"
-                    onClick={() => void handleCreatePerson(item)}
-                    disabled={Boolean(activeReviewItemId)}
-                  >
-                    {activeReviewItemId === item.id ? '新建中' : '新建人员'}
-                  </button>
-                  <button
-                    type="button"
-                    className="primary-button"
-                    onClick={() => void handleConfirmReviewItem(item)}
-                    disabled={Boolean(activeReviewItemId)}
-                  >
-                    {activeReviewItemId === item.id ? '确认中' : '确认'}
-                  </button>
-                  <button
-                    type="button"
-                    className="ghost-button"
-                    onClick={() => void handleIgnoreReviewItem(item)}
-                    disabled={Boolean(activeReviewItemId)}
-                  >
-                    {activeReviewItemId === item.id ? '处理中' : '忽略'}
-                  </button>
-                  <button type="button" className="ghost-button" disabled>
-                    <Eye size={18} />
-                    查看文件
-                  </button>
-                </div>
-              </article>
+        </article>
+      ) : items.length > 0 ? (
+        <article className="review-list-panel">
+          <div className="review-list-header">
+            <div>
+              <h2>待确认资料</h2>
+              <span>{reviewPeople.length} 人 / {items.length} 条</span>
+            </div>
+            <div className="review-list-tools">
+              <span>排序： 最新导入 <ChevronDown size={15} /></span>
+              <button type="button" className="icon-button" onClick={loadReviewItems} disabled={isLoading} aria-label="刷新待确认资料">
+                <RefreshCw size={17} />
+              </button>
+            </div>
+          </div>
+          <label className="review-search-box">
+            <Search size={18} />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="搜索姓名、身份证号、证书、文件名"
+            />
+          </label>
+          <div className="review-filter-tabs">
+            {filterOptions.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={filter === option.value ? 'active' : ''}
+                onClick={() => setFilter(option.value)}
+              >
+                {option.label}
+                <span>{option.count}</span>
+              </button>
             ))}
           </div>
-        </>
+          <div className="review-person-list">
+            {filteredPeople.map((person, index) => {
+              const isExpanded = expandedPersonIds.includes(person.id)
+              return (
+                <article key={person.id} className={`review-person-row ${index === 0 ? 'selected' : ''}`}>
+                  <div className="review-person-row-main">
+                    <input type="checkbox" aria-label={`选择 ${person.personName ?? '未知人员'}`} />
+                    <div className={`review-avatar review-avatar-${(index % 3) + 1}`} aria-hidden="true" />
+                    <div className="review-person-identity">
+                      <div>
+                        <h3>{personDisplayName(person)}</h3>
+                        <HelpCircle size={16} />
+                      </div>
+                      <span>身份证号：{person.idCardNumber ?? person.idCardMaskedDisplay ?? '未识别'}</span>
+                      <span>学历：{person.education ?? '未识别'}</span>
+                      <span>证书：{person.certificates.length > 0 ? person.certificates.map((item) => item.displayName).join('、') : '未识别'}</span>
+                    </div>
+                    <div className="review-tag-column">
+                      <span>待确认标签</span>
+                      <div>
+                        {person.tags.slice(0, 3).map((tag) => (
+                          <span key={tag} className={`review-reason-tag ${reviewTagTone(tag)}`}>{tag}</span>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="review-file-count">
+                      <span>相关文件</span>
+                      <strong>{person.files.length} 个</strong>
+                    </div>
+                    <div className="review-confidence-cell">
+                      <span>置信度</span>
+                      <strong className={confidenceToneClass(person.confidence)}>{formatPercent(person.confidence)}</strong>
+                    </div>
+                    <div className="review-row-actions">
+                      <button type="button" className="primary-button" onClick={() => setSelectedPersonId(person.id)}>
+                        查看详情
+                        <ChevronRight size={17} />
+                      </button>
+                      <button type="button" className="ghost-button" onClick={() => togglePersonFiles(person.id)}>
+                        <Folder size={17} />
+                        {isExpanded ? '收起相关文件' : '显示相关文件'}
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        onClick={() => void handleIgnorePerson(person)}
+                        disabled={isReviewActionBusy}
+                      >
+                        跳过
+                      </button>
+                    </div>
+                  </div>
+                  {isExpanded ? (
+                    <div className="review-inline-files">
+                      {person.files.map((file) => (
+                        <article key={`${person.id}-${file.relativePath}`}>
+                          <FileText size={24} />
+                          <div>
+                            <strong>{file.fileName}</strong>
+                            <span>路径：{file.relativePath}</span>
+                          </div>
+                          <span>关系：{relationTypeLabel(file.relationType)}</span>
+                          <strong className={confidenceToneClass(file.relationConfidence)}>
+                            {formatPercent(file.relationConfidence)}
+                          </strong>
+                          <button type="button" className="ghost-button" onClick={() => void handleOpenSourceFile(file)}>
+                            打开文件
+                          </button>
+                          <button type="button" className="ghost-button" onClick={() => void handleOpenSourceFolder(file)}>
+                            打开所在文件夹
+                          </button>
+                          <p>{file.evidence[0] ?? createPreviewText(file.ocrText ?? '', 140)}</p>
+                        </article>
+                      ))}
+                    </div>
+                  ) : null}
+                </article>
+              )
+            })}
+          </div>
+        </article>
       ) : (
         <div className="pending-result import-empty">
           <h2>{isLoading ? '正在读取待确认资料' : '暂无待确认资料'}</h2>
@@ -953,71 +955,350 @@ function ReviewWorkspace() {
   )
 }
 
-function reviewTypeLabel(itemType: string | null): string {
-  const labels: Record<string, string> = {
-    person_unknown: '人员待确认',
-    person_merge_conflict: '同名归并冲突',
-    primary_category_unknown: '类别待确认',
-    primary_category_conflict: '类别冲突',
-    region_unknown: '地区待确认',
-    document_type_unknown: '资料类型待确认',
-    license_uncertain: '证书待确认',
-    license_recognition_uncertain: '证书识别待确认',
-    education_uncertain: '学历待确认',
-    multi_person_file: '多人员资料',
-    ocr_failed: '文字识别失败',
-    ai_extract_failed: '整理失败',
-    path_ocr_conflict: '路径与识别冲突',
-    path_category_conflict: '路径类别冲突',
-    path_region_conflict: '路径地区冲突',
-    path_person_conflict: '路径人员冲突',
-    ai_uncertain: '识别待确认',
+function createPreviewText(value: string, maxLength: number): string {
+  const normalized = value.replace(/\s+/g, ' ').trim()
+  return normalized.length > maxLength
+    ? `${normalized.slice(0, maxLength)}...`
+    : normalized
+}
+
+function createReviewPeople(items: ReviewItemSummary[]): ReviewPersonCandidate[] {
+  const people = new Map<string, ReviewPersonCandidate>()
+
+  for (const item of items) {
+    const parsed = parseReviewPayload(item.suggestedValue) ?? parseReviewPayload(item.aiResultJson)
+    const personName = item.personName ?? getString(parsed, ['personName', 'person_name', 'name'])
+    const idCardNumber = item.idCardNumber ?? getString(parsed, ['idCardNumber', 'id_card_number'])
+    const idCardMaskedDisplay = getString(parsed, ['idCardMaskedDisplay', 'id_card_masked_display', 'masked_display'])
+    const education = getEducation(parsed)
+    const certificates = getCertificates(item, parsed)
+    const confidence = getConfidence(parsed, item)
+    const relationType = getRelationType(item)
+    const relationConfidence = getRelationConfidence(parsed, item, confidence)
+    const key = item.personId
+      ?? idCardNumber
+      ?? personName
+      ?? item.refId
+      ?? item.id
+    const existing = people.get(key)
+    const file: ReviewPersonFile = {
+      reviewItemId: item.id,
+      fileName: item.fileName ?? '未知文件',
+      relativePath: item.relativePath ?? item.fileName ?? '未记录路径',
+      originalPath: item.sourcePath,
+      relationType,
+      relationConfidence,
+      evidence: [item.reason, item.aiSummary].filter((value): value is string => Boolean(value)),
+      ocrText: item.ocrText,
+    }
+
+    if (!existing) {
+      const reviewReasons = [item.reason ?? '需要人工确认']
+      const nextPerson: ReviewPersonCandidate = {
+        id: key,
+        reviewItemIds: [item.id],
+        personName,
+        idCardNumber,
+        idCardMaskedDisplay,
+        education,
+        region: item.region,
+        certificates,
+        confidence,
+        needsReview: true,
+        reviewReasons,
+        tags: createReviewTags(item, education, certificates, reviewReasons),
+        files: [file],
+      }
+      people.set(key, nextPerson)
+      continue
+    }
+
+    existing.reviewItemIds = [...new Set([...existing.reviewItemIds, item.id])]
+    existing.personName = existing.personName ?? personName
+    existing.idCardNumber = existing.idCardNumber ?? idCardNumber
+    existing.idCardMaskedDisplay = existing.idCardMaskedDisplay ?? idCardMaskedDisplay
+    existing.education = existing.education ?? education
+    existing.region = existing.region ?? item.region
+    existing.certificates = dedupeReviewCertificates([...existing.certificates, ...certificates])
+    existing.confidence = Math.min(existing.confidence, confidence)
+    existing.reviewReasons = [...new Set([...existing.reviewReasons, item.reason ?? '需要人工确认'])]
+    existing.tags = createReviewTags(item, existing.education, existing.certificates, existing.reviewReasons, existing.tags)
+    existing.files = dedupeReviewFiles([...existing.files, file])
   }
 
-  return itemType ? labels[itemType] ?? itemType : '待确认'
+  return [...people.values()].sort((left, right) => left.confidence - right.confidence)
 }
 
-function valueOrPending(value: string | null): string {
-  return value?.trim() || '待确认'
+function createReviewFilterOptions(people: ReviewPersonCandidate[]): Array<{ value: ReviewFilter; label: string; count: number }> {
+  return [
+    { value: 'all', label: '全部', count: people.length },
+    { value: 'person_conflict', label: '人员冲突', count: people.filter((person) => person.tags.includes('人员冲突')).length },
+    { value: 'education_unknown', label: '学历未知', count: people.filter((person) => person.tags.includes('学历未知')).length },
+    { value: 'license_review', label: '证书待确认', count: people.filter((person) => person.tags.includes('证书待确认')).length },
+    { value: 'region_unknown', label: '地区未知', count: people.filter((person) => person.tags.includes('地区未知')).length },
+    { value: 'multi_person', label: '多人员资料', count: people.filter((person) => person.tags.includes('多人员资料')).length },
+    { value: 'failed', label: '识别失败', count: people.filter((person) => person.tags.includes('识别失败')).length },
+  ]
 }
 
-function createReviewFieldDrafts(items: ReviewItemSummary[]): Record<string, ReviewFieldPatch> {
-  return Object.fromEntries(
-    items.map((item) => [
-      item.id,
-      {
-        primaryCategory: item.primaryCategory ?? '',
-        region: item.region ?? '',
-        documentType: item.documentType ?? '',
-        licenseName: item.licenseName ?? '',
-        licenseRecognitionStatus: item.licenseRecognitionStatus ?? '',
-      },
-    ]),
-  )
+function matchesReviewFilter(person: ReviewPersonCandidate, filter: ReviewFilter, query: string): boolean {
+  const normalizedQuery = query.trim().toLowerCase()
+  const matchesQuery = !normalizedQuery || [
+    person.personName,
+    person.idCardNumber,
+    person.idCardMaskedDisplay,
+    person.education,
+    ...person.certificates.flatMap((certificate) => [certificate.certificateName, certificate.certificateSpecialty, certificate.displayName]),
+    ...person.files.flatMap((file) => [file.fileName, file.relativePath]),
+  ].some((value) => value?.toLowerCase().includes(normalizedQuery))
+
+  if (!matchesQuery) {
+    return false
+  }
+
+  const tagByFilter: Record<ReviewFilter, string | null> = {
+    all: null,
+    person_conflict: '人员冲突',
+    education_unknown: '学历未知',
+    license_review: '证书待确认',
+    region_unknown: '地区未知',
+    multi_person: '多人员资料',
+    failed: '识别失败',
+  }
+  const tag = tagByFilter[filter]
+  return tag ? person.tags.includes(tag) : true
 }
 
-function createPersonDrafts(items: ReviewItemSummary[]): Record<string, string> {
-  return Object.fromEntries(items.map((item) => [item.id, item.personId ?? '']))
+function createReviewTags(
+  item: ReviewItemSummary,
+  education: string | null,
+  certificates: ReviewPersonCertificate[],
+  reviewReasons: string[],
+  baseTags: string[] = [],
+): string[] {
+  const tags = new Set(baseTags)
+  const text = [item.itemType, item.reason, ...reviewReasons].join(' ')
+
+  if (text.includes('人员') || text.includes('归并')) {
+    tags.add('人员冲突')
+  }
+  if (!education || text.includes('学历')) {
+    tags.add('学历未知')
+  }
+  if (certificates.length === 0 || certificates.some((certificate) => !certificate.certificateName || !certificate.certificateSpecialty) || text.includes('证书')) {
+    tags.add('证书待确认')
+  }
+  if (!item.region || text.includes('地区')) {
+    tags.add('地区未知')
+  }
+  if (text.includes('多人') || item.itemType === 'multi_person_file') {
+    tags.add('多人员资料')
+  }
+  if (text.includes('失败') || item.itemType === 'ai_extract_failed' || item.itemType === 'ocr_failed') {
+    tags.add('识别失败')
+  }
+
+  return [...tags]
 }
 
-function createNewPersonDrafts(items: ReviewItemSummary[]): Record<string, NewPersonDraft> {
-  return Object.fromEntries(
-    items.map((item) => [
-      item.id,
-      {
-        name: '',
-        idCardNumber: '',
-        idCardLast4: '',
-      },
-    ]),
-  )
+function parseReviewPayload(value: string | null): unknown {
+  if (!value) {
+    return null
+  }
+
+  try {
+    return JSON.parse(value) as unknown
+  } catch {
+    return null
+  }
 }
 
-function personCandidateLabel(person: PersonCandidateSummary): string {
-  const identity = person.idCardNumber ? `_${person.idCardNumber}` : person.idCardLast4 ? `_${person.idCardLast4}` : ''
-  const category = person.primaryCategory ?? '未识别类别'
-  const region = person.region ?? '未划分区域'
-  return `${person.name ?? '未知人员'}${identity} / ${category} / ${region} / ${person.documentCount} 份资料`
+function getString(value: unknown, keys: string[]): string | null {
+  const record = asRecord(value)
+  for (const key of keys) {
+    const item = record[key]
+    if (typeof item === 'string' && item.trim()) {
+      return item.trim()
+    }
+  }
+  return null
+}
+
+function getEducation(value: unknown): string | null {
+  const record = asRecord(value)
+  if (typeof record.education === 'string' && record.education.trim()) {
+    return record.education.trim()
+  }
+
+  const education = asRecord(record.education)
+  const parts = [education.level, education.school, education.major]
+    .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+
+  return parts.length > 0 ? parts.join(' / ') : null
+}
+
+function getCertificates(item: ReviewItemSummary, value: unknown): ReviewPersonCertificate[] {
+  const record = asRecord(value)
+  const rawCertificates = Array.isArray(record.certificates)
+    ? record.certificates
+    : Array.isArray(record.licenses)
+      ? record.licenses
+      : record.license
+        ? [record.license]
+        : []
+  const certificates = rawCertificates.map((entry) => {
+    const certificate = asRecord(entry)
+    const certificateName = getString(certificate, ['certificateName', 'certificate_name', 'normalized_license_name', 'raw_license_name'])
+    const certificateSpecialty = getString(certificate, ['certificateSpecialty', 'certificate_specialty', 'license_category'])
+    return {
+      certificateName,
+      certificateSpecialty,
+      displayName: buildReviewCertificateDisplayName(certificateName, certificateSpecialty),
+      confidence: getNumber(certificate.confidence),
+      evidence: Array.isArray(certificate.evidence)
+        ? certificate.evidence.filter((evidence): evidence is string => typeof evidence === 'string')
+        : [],
+    }
+  }).filter((certificate) => certificate.certificateName || certificate.certificateSpecialty)
+
+  if (item.licenseName && !certificates.some((certificate) => certificate.certificateName === item.licenseName)) {
+    certificates.push({
+      certificateName: item.licenseName,
+      certificateSpecialty: null,
+      displayName: item.licenseName,
+      confidence: item.licenseNeedsReview ? 0.65 : 0.82,
+      evidence: item.reason ? [item.reason] : [],
+    })
+  }
+
+  return dedupeReviewCertificates(certificates)
+}
+
+function buildReviewCertificateDisplayName(name: string | null, specialty: string | null): string | null {
+  if (name && specialty) {
+    return `${name}/${specialty}`
+  }
+
+  return name ?? specialty
+}
+
+function getConfidence(value: unknown, item: ReviewItemSummary): number {
+  const record = asRecord(value)
+  const parsedConfidence = getNumber(record.confidence)
+  if (parsedConfidence !== null) {
+    return parsedConfidence
+  }
+  if (item.itemType === 'ai_extract_failed' || item.itemType === 'ocr_failed') {
+    return 0.42
+  }
+  if (item.licenseNeedsReview) {
+    return 0.68
+  }
+  return 0.78
+}
+
+function getRelationConfidence(value: unknown, item: ReviewItemSummary, fallback: number): number {
+  const record = asRecord(value)
+  const files = Array.isArray(record.files) ? record.files : []
+  const matchingFile = files
+    .map((entry) => asRecord(entry))
+    .find((entry) => entry.relativePath === item.relativePath || entry.relative_path === item.relativePath)
+  return getNumber(matchingFile?.relationConfidence)
+    ?? getNumber(matchingFile?.relation_confidence)
+    ?? fallback
+}
+
+function getRelationType(item: ReviewItemSummary): ReviewPersonFile['relationType'] {
+  if (item.itemType === 'multi_person_file') {
+    return 'multi_person'
+  }
+  if (item.itemType?.includes('conflict')) {
+    return 'uncertain'
+  }
+  return item.personId ? 'owner' : 'mentioned'
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+}
+
+function getNumber(value: unknown): number | null {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) {
+    return null
+  }
+
+  return Math.min(Math.max(parsed, 0), 1)
+}
+
+function dedupeReviewCertificates(certificates: ReviewPersonCertificate[]): ReviewPersonCertificate[] {
+  const seen = new Set<string>()
+  return certificates.filter((certificate) => {
+    const key = `${certificate.certificateName ?? ''}/${certificate.certificateSpecialty ?? ''}`
+    if (seen.has(key)) {
+      return false
+    }
+    seen.add(key)
+    return true
+  })
+}
+
+function dedupeReviewFiles(files: ReviewPersonFile[]): ReviewPersonFile[] {
+  const byPath = new Map<string, ReviewPersonFile>()
+
+  for (const file of files) {
+    const current = byPath.get(file.relativePath)
+    if (!current || current.relationConfidence < file.relationConfidence) {
+      byPath.set(file.relativePath, file)
+    }
+  }
+
+  return [...byPath.values()]
+}
+
+function personDisplayName(person: ReviewPersonCandidate): string {
+  const suffix = person.idCardNumber?.slice(-4) ?? person.idCardMaskedDisplay?.slice(-4)
+  return `${person.personName ?? '未知人员'}${suffix ? `_${suffix}` : ''}`
+}
+
+function formatPercent(value: number): string {
+  return `${(value * 100).toFixed(1)}%`
+}
+
+function confidenceToneClass(value: number): string {
+  if (value >= 0.85) {
+    return 'confidence-high'
+  }
+  if (value >= 0.7) {
+    return 'confidence-medium'
+  }
+  return 'confidence-low'
+}
+
+function relationTypeLabel(value: ReviewPersonFile['relationType']): string {
+  const labels: Record<ReviewPersonFile['relationType'], string> = {
+    owner: 'owner',
+    mentioned: 'mentioned',
+    multi_person: 'multi_person',
+    uncertain: 'uncertain',
+  }
+
+  return labels[value]
+}
+
+function reviewTagTone(tag: string): string {
+  if (tag.includes('失败')) {
+    return 'red'
+  }
+  if (tag.includes('多人')) {
+    return 'pink'
+  }
+  if (tag.includes('地区')) {
+    return 'blue'
+  }
+  return 'orange'
 }
 
 function ExportWorkspace() {

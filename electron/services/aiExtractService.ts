@@ -10,6 +10,10 @@ export interface AiExtractionInput {
   originalPath: string
   parentFolder: string
   ocrText: string
+  sourceRootPath?: string | null
+  relativePath?: string | null
+  pathSegments?: string[] | null
+  pathParseResult?: string | null
   defaultPrimaryCategory?: string | null
   defaultRegion?: string | null
 }
@@ -242,13 +246,29 @@ function buildUserPayload(input: AiExtractionInput) {
       id: input.fileId,
       file_name: sanitizeIdCardsForAi(input.fileName),
       original_path: sanitizeIdCardsForAi(input.originalPath),
+      source_root_path: sanitizeIdCardsForAi(input.sourceRootPath ?? ''),
+      relative_path: sanitizeIdCardsForAi(input.relativePath ?? ''),
       parent_folder: sanitizeIdCardsForAi(input.parentFolder),
+      path_segments: (input.pathSegments ?? []).map((segment) => sanitizeIdCardsForAi(segment)),
+      path_parse_hint: sanitizePathParseHint(input.pathParseResult),
     },
     user_defaults: {
       primary_category: input.defaultPrimaryCategory ?? null,
       region: input.defaultRegion ?? null,
     },
     ocr_text: sanitizeIdCardsForAi(input.ocrText).slice(0, MAX_OCR_TEXT_CHARS),
+  }
+}
+
+function sanitizePathParseHint(value: string | null | undefined): unknown {
+  if (!value) {
+    return null
+  }
+
+  try {
+    return JSON.parse(sanitizeIdCardsForAi(value)) as unknown
+  } catch {
+    return sanitizeIdCardsForAi(value)
   }
 }
 

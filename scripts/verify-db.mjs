@@ -16,6 +16,7 @@ const modules = [
   ['electron/db/connection.ts', 'electron/db/connection.js'],
   ['electron/services/hashService.ts', 'electron/services/hashService.js'],
   ['electron/services/fileScanner.ts', 'electron/services/fileScanner.js'],
+  ['electron/services/pathSemanticService.ts', 'electron/services/pathSemanticService.js'],
   ['electron/services/ocrService.ts', 'electron/services/ocrService.js'],
   ['electron/services/pdfRasterService.ts', 'electron/services/pdfRasterService.js'],
   ['electron/services/textExtractService.ts', 'electron/services/textExtractService.js'],

@@ -154,6 +154,17 @@ app.whenReady().then(async () => {
       assert(low.reviewItemCount >= 2, 'low confidence should create review items');
 
       seedFile(db, 'file-4', '张三冲突.txt');
+      db.prepare("update files set path_parse_result = @pathParseResult, path_confidence = 0.8 where id = 'file-4'").run({
+        pathParseResult: JSON.stringify({
+          candidate_primary_category: '工程',
+          candidate_region: '成都',
+          candidate_person_name: '张三',
+          candidate_document_type: 'license',
+          candidate_license_hint: '二级建造师',
+          confidence: 0.8,
+          evidence: ['路径层级包含主类别 工程', '路径层级包含地区 成都', '路径层级疑似人员 张三'],
+        }),
+      });
       const conflictResult = createResult({
         name: '张三',
         idCardLast4: null,
@@ -184,6 +195,9 @@ app.whenReady().then(async () => {
       assertEqual(documentCount, 4, 'person document count');
       assertEqual(licenseCount, 7, 'license count');
       assert(reviewCount >= 3, 'review item count');
+      const pathConflictRows = db.prepare("select item_type, reason from review_items where ref_id = 'file-4' order by item_type").all();
+      assert(pathConflictRows.some((row) => row.item_type === 'path_category_conflict'), 'path category conflict review');
+      assert(pathConflictRows.some((row) => row.item_type === 'path_region_conflict'), 'path region conflict review');
       assertEqual(dirtyCount, 3, 'archive dirty people');
       assertEqual(multiPersonCount, 0, 'multi-person file count');
 

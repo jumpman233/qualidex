@@ -100,7 +100,6 @@ function cleanup(database, shouldApply, shouldIncludeOcrFailed) {
     .prepare(`
       SELECT id, file_name, original_path, process_status, ocr_status, sha256, source_batch_id
       FROM files
-      WHERE ${predicate}
       ORDER BY created_at ASC, rowid ASC
     `)
     .all()

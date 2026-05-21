@@ -52,8 +52,6 @@ export function initializeSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_files_sha256 ON files(sha256);
     CREATE INDEX IF NOT EXISTS idx_files_source_batch_id ON files(source_batch_id);
     CREATE INDEX IF NOT EXISTS idx_files_original_path ON files(original_path);
-    CREATE INDEX IF NOT EXISTS idx_files_source_root_path ON files(source_root_path);
-    CREATE INDEX IF NOT EXISTS idx_files_folder_merge_key ON files(folder_merge_key);
     CREATE INDEX IF NOT EXISTS idx_import_batches_created_at ON import_batches(created_at);
     CREATE INDEX IF NOT EXISTS idx_import_batches_source_path ON import_batches(source_path);
     CREATE INDEX IF NOT EXISTS idx_import_batches_batch_type ON import_batches(batch_type);
@@ -219,7 +217,6 @@ export function initializeSchema(db: Database.Database): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_people_name ON people(name);
-    CREATE INDEX IF NOT EXISTS idx_people_id_card_hash ON people(id_card_hash);
     CREATE INDEX IF NOT EXISTS idx_person_documents_file_id ON person_documents(file_id);
     CREATE INDEX IF NOT EXISTS idx_licenses_file_id ON licenses(file_id);
     CREATE INDEX IF NOT EXISTS idx_review_items_ref_id ON review_items(ref_id);
@@ -231,6 +228,8 @@ export function initializeSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_export_jobs_created_at ON export_jobs(created_at);
   `)
 
+  ensureColumn(db, 'files', 'source_root_path', 'TEXT')
+  ensureColumn(db, 'files', 'parent_folder', 'TEXT')
   ensureColumn(db, 'files', 'relative_path', 'TEXT')
   ensureColumn(db, 'files', 'path_segments', 'TEXT')
   ensureColumn(db, 'files', 'path_parse_result', 'TEXT')
@@ -238,9 +237,11 @@ export function initializeSchema(db: Database.Database): void {
   ensureColumn(db, 'files', 'folder_merge_key', 'TEXT')
   ensureColumn(db, 'files', 'folder_merge_result', 'TEXT')
   ensureColumn(db, 'files', 'folder_merge_confidence', 'REAL')
+  db.exec('CREATE INDEX IF NOT EXISTS idx_files_source_root_path ON files(source_root_path)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_files_folder_merge_key ON files(folder_merge_key)')
   ensureColumn(db, 'people', 'id_card_number', 'TEXT')
   ensureColumn(db, 'people', 'id_card_number_encrypted', 'TEXT')
+  ensureColumn(db, 'people', 'id_card_hash', 'TEXT')
   ensureColumn(db, 'people', 'masked_display', 'TEXT')
   db.exec('CREATE INDEX IF NOT EXISTS idx_people_id_card_hash ON people(id_card_hash)')
   ensureColumn(db, 'licenses', 'issuer_authority_level', 'TEXT')

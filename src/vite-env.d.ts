@@ -167,10 +167,16 @@ interface ReviewItemSummary {
   fileId: string | null
   fileName: string | null
   sourcePath: string | null
+  parentFolder: string | null
+  relativePath: string | null
+  pathParseResult: string | null
+  folderMergeResult: string | null
   processStatus: string | null
   ocrStatus: string | null
+  ocrText: string | null
   ocrTextPreview: string | null
   aiStatus: string | null
+  aiResultJson: string | null
   aiSummary: string | null
   personId: string | null
   personName: string | null
@@ -188,6 +194,12 @@ interface ReviewItemSummary {
 interface ReviewItemActionResult {
   reviewItem: ReviewItemSummary
   auditLogId: string
+}
+
+interface SourceOpenResult {
+  opened: boolean
+  targetPath: string | null
+  error: string | null
 }
 
 interface ReviewFieldPatch {
@@ -308,6 +320,8 @@ interface Window {
     generateArchivePreview(outputRoot: string): Promise<ArchivePreviewResult>
     writeArchive(outputRoot: string): Promise<ArchiveWriteResult>
     listReviewItems(limit?: number): Promise<ReviewItemSummary[]>
+    openReviewSourceFile(reviewItemId: string): Promise<SourceOpenResult>
+    openReviewSourceFolder(reviewItemId: string): Promise<SourceOpenResult>
     confirmReviewItem(reviewItemId: string, confirmedValue?: string | null): Promise<ReviewItemActionResult>
     ignoreReviewItem(reviewItemId: string, reason?: string | null): Promise<ReviewItemActionResult>
     updateReviewFields(reviewItemId: string, patch: ReviewFieldPatch): Promise<ReviewItemActionResult>
