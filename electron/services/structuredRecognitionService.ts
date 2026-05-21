@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
-import type { AiExtractionInput, AiExtractionResult } from './aiExtractService'
+import type { AiExtractionInput, AiExtractionResult, AiLicenseResult } from './aiExtractService'
 import { extractIdCardNumbers, type NormalizedIdCard } from './idCardService'
 
 export interface StructuredRecognitionPersistResult {
@@ -8,6 +8,7 @@ export interface StructuredRecognitionPersistResult {
   personMatchStrategy: string
   personDocumentId: string | null
   licenseId: string | null
+  licenseIds: string[]
   reviewItemCount: number
 }
 
@@ -38,9 +39,9 @@ export function persistStructuredRecognition(
   const personDocumentId = personMatch.person
     ? upsertPersonDocument(db, input.fileId, personMatch.person.id, result, reviewReasons, now)
     : null
-  const licenseId = personMatch.person && result.license.is_license_candidate
-    ? insertLicense(db, input, result, personMatch.person.id, reviewReasons, now)
-    : null
+  const licenseIds = personMatch.person
+    ? insertLicenses(db, input, result, personMatch.person.id, reviewReasons, now)
+    : []
 
   const structuredReviewReasons = collectStructuredReviewReasons(result, personMatch.strategy, reviewReasons, localIdCards)
   persistStructuredReviewItems(db, input.fileId, structuredReviewReasons, result, now)
@@ -49,7 +50,8 @@ export function persistStructuredRecognition(
     personId: personMatch.person?.id ?? null,
     personMatchStrategy: personMatch.strategy,
     personDocumentId,
-    licenseId,
+    licenseId: licenseIds[0] ?? null,
+    licenseIds,
     reviewItemCount: structuredReviewReasons.length,
   }
 }
@@ -378,10 +380,37 @@ function upsertPersonDocument(
   return id
 }
 
+function insertLicenses(
+  db: Database.Database,
+  input: AiExtractionInput,
+  result: AiExtractionResult,
+  personId: string,
+  reviewReasons: string[],
+  now: string,
+): string[] {
+  const licenseCandidates = getCandidateLicenses(result)
+  const insertedIds: string[] = []
+
+  for (const license of licenseCandidates) {
+    insertedIds.push(insertLicense(db, input, result, license, personId, reviewReasons, now))
+  }
+
+  return insertedIds
+}
+
+function getCandidateLicenses(result: AiExtractionResult): AiLicenseResult[] {
+  const candidates = result.licenses.length > 0
+    ? result.licenses
+    : [result.license]
+
+  return candidates.filter((license) => license.is_license_candidate)
+}
+
 function insertLicense(
   db: Database.Database,
   input: AiExtractionInput,
   result: AiExtractionResult,
+  license: AiLicenseResult,
   personId: string,
   reviewReasons: string[],
   now: string,
@@ -389,10 +418,10 @@ function insertLicense(
   const id = randomUUID()
   const needsReview = reviewReasons.length > 0 || result.confidence < CONFIDENCE_REVIEW_THRESHOLD
   const searchText = [
-    result.license.raw_license_name,
-    result.license.normalized_license_name,
-    result.license.license_category,
-    result.license.issuing_authority,
+    license.raw_license_name,
+    license.normalized_license_name,
+    license.license_category,
+    license.issuing_authority,
   ].filter(Boolean).join(' ')
 
   db.prepare(`
@@ -459,11 +488,11 @@ function insertLicense(
     primaryCategory: result.category.primary_value,
     detectedCategories: JSON.stringify(result.category.candidate_values),
     region: result.region.value,
-    rawLicenseName: result.license.raw_license_name,
-    normalizedLicenseName: result.license.normalized_license_name,
-    licenseCategory: result.license.license_category,
-    issuingAuthority: result.license.issuing_authority,
-    validUntil: result.license.valid_until,
+    rawLicenseName: license.raw_license_name,
+    normalizedLicenseName: license.normalized_license_name,
+    licenseCategory: license.license_category,
+    issuingAuthority: license.issuing_authority,
+    validUntil: license.valid_until,
     recognitionStatus: needsReview ? 'pending_review' : 'suggested',
     recognitionReason: needsReview ? reviewReasons.join('；') || '低置信度，需要人工确认' : null,
     issuerAuthorityReviewStatus: needsReview ? 'pending_review' : 'confirmed',
@@ -502,10 +531,11 @@ function collectStructuredReviewReasons(
   if (localIdCards.length > 1) {
     reasons.add('同一文件出现多个完整身份证号')
   }
-  if (result.license.is_license_candidate && result.confidence < CONFIDENCE_REVIEW_THRESHOLD) {
+  const licenseCandidates = getCandidateLicenses(result)
+  if (licenseCandidates.length > 0 && result.confidence < CONFIDENCE_REVIEW_THRESHOLD) {
     reasons.add('证书识别置信度低')
   }
-  if (result.license.is_license_candidate && !result.license.normalized_license_name) {
+  if (licenseCandidates.some((license) => !license.normalized_license_name)) {
     reasons.add('证书名称未知')
   }
 

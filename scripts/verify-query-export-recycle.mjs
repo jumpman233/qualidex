@@ -114,6 +114,8 @@ app.whenReady().then(async () => {
       assertEqual(results[0].name, '张三', 'query result person');
       assertEqual(results[0].idCardNumber, '110101199003071234', 'query full id card');
       assertEqual(results[0].maskedDisplay, '1101**********1234', 'query masked id card');
+      assert(results[0].licenseNames.includes('二级建造师'), 'query includes first license');
+      assert(results[0].licenseNames.includes('安全员证'), 'query includes second license');
       assertEqual(results[0].documentCount, 1, 'query document count');
 
       const pendingExcluded = queryPeople(db, { categories: ['工程'], includePendingReview: false });
@@ -127,6 +129,8 @@ app.whenReady().then(async () => {
       assert(existsSync(excelPath), 'excel file exists');
       const maskedRows = readFirstSheet(excelPath);
       assertEqual(maskedRows[0]['身份证号'], '1101**********1234', 'default excel exports masked id card');
+      assert(String(maskedRows[0]['证书']).includes('二级建造师'), 'default excel includes first license');
+      assert(String(maskedRows[0]['证书']).includes('安全员证'), 'default excel includes second license');
       assert(!JSON.stringify(maskedRows).includes('110101199003071234'), 'default excel should not include full id card');
 
       const fullExcelPath = path.join(${JSON.stringify(tempRoot)}, 'query-results-full-id.xlsx');
@@ -196,6 +200,7 @@ function seedDatabase(db, sourceRoot) {
   db.prepare("insert into person_documents (id, person_id, file_id, document_type, target_category, relation_type, confidence, needs_review, status, created_at, updated_at) values ('doc-1', 'person-1', 'file-1', 'license', '工程', 'primary', 1, 0, 'active', 'now', 'now')").run();
   db.prepare("insert into person_documents (id, person_id, file_id, document_type, target_category, relation_type, confidence, needs_review, status, created_at, updated_at) values ('doc-2', 'person-2', 'file-2', 'license', '工程', 'primary', 0.5, 1, 'active', 'now', 'now')").run();
   db.prepare("insert into licenses (id, person_id, file_id, primary_category, region, raw_license_name, normalized_license_name, recognition_status, needs_review, status, created_at, updated_at) values ('license-1', 'person-1', 'file-1', '工程', '成都', '二级建造师', '二级建造师', 'confirmed', 0, 'active', 'now', 'now')").run();
+  db.prepare("insert into licenses (id, person_id, file_id, primary_category, region, raw_license_name, normalized_license_name, recognition_status, needs_review, status, created_at, updated_at) values ('license-1b', 'person-1', 'file-1', '工程', '成都', '安全员证', '安全员证', 'confirmed', 0, 'active', 'now', 'now')").run();
   db.prepare("insert into licenses (id, person_id, file_id, primary_category, region, raw_license_name, normalized_license_name, recognition_status, needs_review, status, created_at, updated_at) values ('license-2', 'person-2', 'file-2', '工程', '成都', '二级建造师', '二级建造师', 'pending_review', 1, 'active', 'now', 'now')").run();
 }
 

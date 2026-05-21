@@ -194,11 +194,11 @@ export function listReviewItems(
       people.region AS person_region,
       person_documents.document_type,
       person_documents.target_category AS document_target_category,
-      licenses.normalized_license_name AS license_name,
-      licenses.primary_category AS license_primary_category,
-      licenses.region AS license_region,
-      licenses.recognition_status AS license_recognition_status,
-      licenses.needs_review AS license_needs_review,
+      GROUP_CONCAT(DISTINCT licenses.normalized_license_name) AS license_name,
+      GROUP_CONCAT(DISTINCT licenses.primary_category) AS license_primary_category,
+      GROUP_CONCAT(DISTINCT licenses.region) AS license_region,
+      GROUP_CONCAT(DISTINCT licenses.recognition_status) AS license_recognition_status,
+      MAX(COALESCE(licenses.needs_review, 0)) AS license_needs_review,
       review_items.created_at,
       review_items.updated_at
     FROM review_items
@@ -224,6 +224,7 @@ export function listReviewItems(
     ) ai_latest ON ai_latest.file_id = files.id
     WHERE COALESCE(review_items.status, 'pending') = 'pending'
       AND (files.id IS NULL OR (files.deleted_at IS NULL AND files.archive_status != 'deleted'))
+    GROUP BY review_items.id
     ORDER BY review_items.created_at DESC, review_items.id DESC
     LIMIT @limit
   `).all({ limit: safeLimit }) as ReviewItemRow[]
@@ -899,11 +900,11 @@ function readReviewItemRowsById(db: Database.Database, reviewItemId: string): Re
       people.region AS person_region,
       person_documents.document_type,
       person_documents.target_category AS document_target_category,
-      licenses.normalized_license_name AS license_name,
-      licenses.primary_category AS license_primary_category,
-      licenses.region AS license_region,
-      licenses.recognition_status AS license_recognition_status,
-      licenses.needs_review AS license_needs_review,
+      GROUP_CONCAT(DISTINCT licenses.normalized_license_name) AS license_name,
+      GROUP_CONCAT(DISTINCT licenses.primary_category) AS license_primary_category,
+      GROUP_CONCAT(DISTINCT licenses.region) AS license_region,
+      GROUP_CONCAT(DISTINCT licenses.recognition_status) AS license_recognition_status,
+      MAX(COALESCE(licenses.needs_review, 0)) AS license_needs_review,
       review_items.created_at,
       review_items.updated_at
     FROM review_items
@@ -928,6 +929,7 @@ function readReviewItemRowsById(db: Database.Database, reviewItemId: string): Re
         AND latest.created_at = ai_extract_results.created_at
     ) ai_latest ON ai_latest.file_id = files.id
     WHERE review_items.id = @reviewItemId
+    GROUP BY review_items.id
     LIMIT 1
   `).all({ reviewItemId }) as ReviewItemRow[]
 }
@@ -1452,13 +1454,18 @@ function createAiSummary(resultJson: string | null, error: string | null): strin
       category?: { primary_value?: string | null }
       region?: { value?: string | null }
       license?: { normalized_license_name?: string | null }
+      licenses?: Array<{ normalized_license_name?: string | null }>
       confidence?: number | null
     }
+    const licenseNames = uniqueValues([
+      ...(result.licenses ?? []).map((license) => license.normalized_license_name ?? null),
+      result.license?.normalized_license_name ?? null,
+    ])
     const parts = [
       result.person?.name ? `人员：${result.person.name}` : null,
       result.category?.primary_value ? `类别：${result.category.primary_value}` : null,
       result.region?.value ? `地区：${result.region.value}` : null,
-      result.license?.normalized_license_name ? `证书：${result.license.normalized_license_name}` : null,
+      licenseNames.length > 0 ? `证书：${licenseNames.join('、')}` : null,
       typeof result.confidence === 'number' ? `置信度：${Math.round(result.confidence * 100)}%` : null,
     ].filter(Boolean)
 

@@ -14,6 +14,15 @@ export interface AiExtractionInput {
   defaultRegion?: string | null
 }
 
+export interface AiLicenseResult {
+  raw_license_name: string | null
+  normalized_license_name: string | null
+  license_category: string | null
+  issuing_authority: string | null
+  valid_until: string | null
+  is_license_candidate: boolean
+}
+
 export interface AiExtractionResult {
   document_type: string
   category: {
@@ -38,14 +47,8 @@ export interface AiExtractionResult {
     school: string | null
     major: string | null
   }
-  license: {
-    raw_license_name: string | null
-    normalized_license_name: string | null
-    license_category: string | null
-    issuing_authority: string | null
-    valid_until: string | null
-    is_license_candidate: boolean
-  }
+  license: AiLicenseResult
+  licenses: AiLicenseResult[]
   multi_person: {
     is_multi_person_file: boolean
     detected_people: Array<{
@@ -177,6 +180,7 @@ function buildSystemPrompt(): string {
     '不要编造任何字段；不确定时返回 null、unknown 或空数组。',
     '你不能把建议当成最终事实；低置信度、字段冲突、多人资料、未知人员、未知类别、未知地区都必须 needs_manual_review=true。',
     '类别规则：primary_value 只能给一个主类别；candidate_values 可以给多个候选类别。',
+    '证书规则：一个人员可以有多条证书；licenses 必须输出全部证书候选，license 字段保留为第一条证书以兼容旧流程。',
     '隐私规则：身份证号只能输出后四位 id_card_last4 和脱敏值 masked_display，不要输出完整身份证号。',
     '必须只输出 JSON，不要输出 Markdown 或解释文字。',
   ].join('\n')
@@ -217,6 +221,14 @@ function buildUserPayload(input: AiExtractionInput) {
         valid_until: 'YYYY-MM-DD | null',
         is_license_candidate: 'boolean',
       },
+      licenses: [{
+        raw_license_name: 'string | null',
+        normalized_license_name: 'string | null',
+        license_category: 'string | null',
+        issuing_authority: 'string | null',
+        valid_until: 'YYYY-MM-DD | null',
+        is_license_candidate: 'boolean',
+      }],
       multi_person: {
         is_multi_person_file: 'boolean',
         detected_people: [{ name: 'string | null', id_card_last4: 'string | null', masked_display: 'string | null' }],
@@ -246,7 +258,9 @@ function normalizeExtractionResult(value: unknown): AiExtractionResult {
   const person = asRecord(record.person)
   const region = asRecord(record.region)
   const education = asRecord(record.education)
-  const license = asRecord(record.license)
+  const license = normalizeLicense(record.license)
+  const licenses = normalizeLicenses(record.licenses, license)
+  const compatibleLicense = hasLicenseSignal(license) ? license : licenses[0] ?? license
   const multiPerson = asRecord(record.multi_person)
 
   return {
@@ -273,14 +287,8 @@ function normalizeExtractionResult(value: unknown): AiExtractionResult {
       school: nullableString(education.school),
       major: nullableString(education.major),
     },
-    license: {
-      raw_license_name: nullableString(license.raw_license_name),
-      normalized_license_name: nullableString(license.normalized_license_name),
-      license_category: nullableString(license.license_category),
-      issuing_authority: nullableString(license.issuing_authority),
-      valid_until: nullableString(license.valid_until),
-      is_license_candidate: Boolean(license.is_license_candidate),
-    },
+    license: compatibleLicense,
+    licenses,
     multi_person: {
       is_multi_person_file: Boolean(multiPerson.is_multi_person_file),
       detected_people: normalizeDetectedPeople(multiPerson.detected_people),
@@ -315,6 +323,9 @@ function collectReviewReasons(result: AiExtractionResult): string[] {
   }
   if (result.multi_person.is_multi_person_file) {
     reasons.add('疑似多人资料')
+  }
+  if (result.licenses.some((license) => license.is_license_candidate && !license.normalized_license_name)) {
+    reasons.add('证书名称未知')
   }
 
   return [...reasons]
@@ -522,6 +533,39 @@ function normalizeDetectedPeople(value: unknown): AiExtractionResult['multi_pers
       masked_display: sanitizeNullableIdCardOutput(record.masked_display),
     }
   })
+}
+
+function normalizeLicense(value: unknown): AiLicenseResult {
+  const license = asRecord(value)
+  return {
+    raw_license_name: nullableString(license.raw_license_name),
+    normalized_license_name: nullableString(license.normalized_license_name),
+    license_category: nullableString(license.license_category),
+    issuing_authority: nullableString(license.issuing_authority),
+    valid_until: nullableString(license.valid_until),
+    is_license_candidate: Boolean(license.is_license_candidate),
+  }
+}
+
+function normalizeLicenses(value: unknown, fallbackLicense: AiLicenseResult): AiLicenseResult[] {
+  const licenses = Array.isArray(value)
+    ? value.map((item) => normalizeLicense(item))
+    : []
+  const candidates = licenses.filter(hasLicenseSignal)
+
+  if (candidates.length > 0) {
+    return candidates
+  }
+
+  return hasLicenseSignal(fallbackLicense) ? [fallbackLicense] : []
+}
+
+function hasLicenseSignal(license: AiLicenseResult): boolean {
+  return license.is_license_candidate
+    || Boolean(license.raw_license_name)
+    || Boolean(license.normalized_license_name)
+    || Boolean(license.license_category)
+    || Boolean(license.issuing_authority)
 }
 
 function sanitizeNullableIdCardOutput(value: unknown): string | null {

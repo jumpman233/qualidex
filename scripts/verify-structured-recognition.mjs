@@ -116,6 +116,7 @@ app.whenReady().then(async () => {
       assert(first.personId, 'first result should create person');
       assert(first.personDocumentId, 'first result should create person document');
       assert(first.licenseId, 'first result should create license');
+      assertEqual(first.licenseIds.length, 2, 'first result should create multiple licenses');
       assertEqual(first.personMatchStrategy, 'created', 'first person strategy');
 
       seedFile(db, 'file-2', '张三安全员证.txt');
@@ -149,6 +150,7 @@ app.whenReady().then(async () => {
       }, lowConfidenceResult, ['地区未知或置信度低']);
       assert(low.personId, 'low confidence should still create suggested person');
       assert(low.licenseId, 'low confidence license candidate should create license');
+      assertEqual(low.licenseIds.length, 1, 'low confidence should create one license');
       assert(low.reviewItemCount >= 2, 'low confidence should create review items');
 
       seedFile(db, 'file-4', '张三冲突.txt');
@@ -180,7 +182,7 @@ app.whenReady().then(async () => {
 
       assertEqual(peopleCount, 3, 'people count');
       assertEqual(documentCount, 4, 'person document count');
-      assertEqual(licenseCount, 4, 'license count');
+      assertEqual(licenseCount, 7, 'license count');
       assert(reviewCount >= 3, 'review item count');
       assertEqual(dirtyCount, 3, 'archive dirty people');
       assertEqual(multiPersonCount, 0, 'multi-person file count');
@@ -191,8 +193,11 @@ app.whenReady().then(async () => {
       assert(zhangSan.id_card_hash && zhangSan.id_card_hash.length === 64, 'id card hash should be sha256');
       assertEqual(zhangSan.masked_display, '1101**********1234', 'masked display');
 
-      const license = db.prepare("select normalized_license_name, detected_categories, needs_review, recognition_status, official_status, official_status_source from licenses where file_id = 'file-1'").get();
-      assertEqual(license.normalized_license_name, '二级建造师', 'normalized license name');
+      const licenses = db.prepare("select normalized_license_name, detected_categories, needs_review, recognition_status, official_status, official_status_source from licenses where file_id = 'file-1' order by normalized_license_name").all();
+      assertEqual(licenses.length, 2, 'file-1 license count');
+      assert(licenses.some((item) => item.normalized_license_name === '二级建造师'), 'file-1 includes 二级建造师');
+      assert(licenses.some((item) => item.normalized_license_name === '安全员证'), 'file-1 includes 安全员证');
+      const license = licenses.find((item) => item.normalized_license_name === '二级建造师');
       assertEqual(JSON.parse(license.detected_categories)[0], '工程', 'detected category');
       assertEqual(license.needs_review, 0, 'high confidence license review flag');
       assertEqual(license.recognition_status, 'suggested', 'high confidence recognition status');
@@ -257,6 +262,33 @@ function createResult(options) {
       valid_until: '2028-12-31',
       is_license_candidate: true,
     },
+    licenses: options.normalizedLicenseName === null
+      ? [{
+          raw_license_name: '未知证书',
+          normalized_license_name: null,
+          license_category: '建筑工程注册类执业资格',
+          issuing_authority: '住房城乡建设部门',
+          valid_until: '2028-12-31',
+          is_license_candidate: true,
+        }]
+      : [
+          {
+            raw_license_name: '二级建造师注册证书',
+            normalized_license_name: '二级建造师',
+            license_category: '建筑工程注册类执业资格',
+            issuing_authority: '住房城乡建设部门',
+            valid_until: '2028-12-31',
+            is_license_candidate: true,
+          },
+          {
+            raw_license_name: '建筑施工企业专职安全生产管理人员证书',
+            normalized_license_name: '安全员证',
+            license_category: '安全生产类资格',
+            issuing_authority: '住房城乡建设部门',
+            valid_until: '2027-06-30',
+            is_license_candidate: true,
+          },
+        ],
     multi_person: {
       is_multi_person_file: false,
       detected_people: [],
