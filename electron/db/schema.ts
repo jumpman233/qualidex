@@ -33,6 +33,9 @@ export function initializeSchema(db: Database.Database): void {
       source_batch_id TEXT,
       source_root_path TEXT,
       parent_folder TEXT,
+      folder_merge_key TEXT,
+      folder_merge_result TEXT,
+      folder_merge_confidence REAL,
       ocr_text TEXT,
       ocr_status TEXT,
       process_status TEXT,
@@ -50,6 +53,7 @@ export function initializeSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_files_source_batch_id ON files(source_batch_id);
     CREATE INDEX IF NOT EXISTS idx_files_original_path ON files(original_path);
     CREATE INDEX IF NOT EXISTS idx_files_source_root_path ON files(source_root_path);
+    CREATE INDEX IF NOT EXISTS idx_files_folder_merge_key ON files(folder_merge_key);
     CREATE INDEX IF NOT EXISTS idx_import_batches_created_at ON import_batches(created_at);
     CREATE INDEX IF NOT EXISTS idx_import_batches_source_path ON import_batches(source_path);
     CREATE INDEX IF NOT EXISTS idx_import_batches_batch_type ON import_batches(batch_type);
@@ -231,6 +235,10 @@ export function initializeSchema(db: Database.Database): void {
   ensureColumn(db, 'files', 'path_segments', 'TEXT')
   ensureColumn(db, 'files', 'path_parse_result', 'TEXT')
   ensureColumn(db, 'files', 'path_confidence', 'REAL')
+  ensureColumn(db, 'files', 'folder_merge_key', 'TEXT')
+  ensureColumn(db, 'files', 'folder_merge_result', 'TEXT')
+  ensureColumn(db, 'files', 'folder_merge_confidence', 'REAL')
+  db.exec('CREATE INDEX IF NOT EXISTS idx_files_folder_merge_key ON files(folder_merge_key)')
   ensureColumn(db, 'people', 'id_card_number', 'TEXT')
   ensureColumn(db, 'people', 'id_card_number_encrypted', 'TEXT')
   ensureColumn(db, 'people', 'masked_display', 'TEXT')

@@ -23,6 +23,7 @@
     "verify:processing-worker": "node scripts/verify-processing-worker.mjs",
     "verify:processing-worker-ai-success": "node scripts/verify-processing-worker-ai-success.mjs",
     "verify:structured-recognition": "node scripts/verify-structured-recognition.mjs",
+    "verify:folder-merge": "node scripts/verify-folder-merge.mjs",
     "verify:archive-preview": "node scripts/verify-archive-preview.mjs",
     "verify:archive-write": "node scripts/verify-archive-write.mjs",
     "verify:review-list": "node scripts/verify-review-list.mjs",
@@ -33,7 +34,7 @@
     "verify:review-person-reassign": "node scripts/verify-review-person-reassign.mjs",
     "verify:people-merge": "node scripts/verify-people-merge.mjs",
     "verify:query-export-recycle": "node scripts/verify-query-export-recycle.mjs",
-    "verify:p1": "pnpm run verify:import-batches && pnpm run verify:processing-worker && pnpm run verify:processing-worker-ai-success && pnpm run verify:id-card-privacy && pnpm run verify:structured-recognition && pnpm run verify:archive-preview && pnpm run verify:archive-write && pnpm run verify:review-list && pnpm run verify:review-actions && pnpm run verify:review-field-update && pnpm run verify:review-license-update && pnpm run verify:review-person-reassign && pnpm run verify:review-create-person && pnpm run verify:people-merge && pnpm run verify:query-export-recycle && pnpm run lint && pnpm run build",
+    "verify:p1": "pnpm run verify:import-batches && pnpm run verify:processing-worker && pnpm run verify:processing-worker-ai-success && pnpm run verify:id-card-privacy && pnpm run verify:structured-recognition && pnpm run verify:folder-merge && pnpm run verify:archive-preview && pnpm run verify:archive-write && pnpm run verify:review-list && pnpm run verify:review-actions && pnpm run verify:review-field-update && pnpm run verify:review-license-update && pnpm run verify:review-person-reassign && pnpm run verify:review-create-person && pnpm run verify:people-merge && pnpm run verify:query-export-recycle && pnpm run lint && pnpm run build",
     "verify:db": "pnpm run rebuild:native && node scripts/verify-db.mjs"
   },
   "dependencies": {

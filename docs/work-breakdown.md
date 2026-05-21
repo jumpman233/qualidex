@@ -28,6 +28,7 @@
 - P0-1 完整身份证号已完成：本地 SQLite 保存完整身份证号、后四位、hash 和 AI 脱敏值；云端 AI 请求前脱敏；人员归并优先使用完整身份证 hash；本地应用页面可展示完整身份证号。
 - P0-2 归档文件夹命名已完成：归档预览、归档写入和查询资料文件夹导出均不暴露完整身份证号；查询结果 Excel 默认导出脱敏身份证号，仅显式开启 `exportFullIdCard` 时导出完整值，并在导出日志中记录开关。
 - P0-3 一人多证书已完成：AI 抽取结果支持 `licenses` 多证书数组并兼容旧 `license` 字段；结构化落库可为同一人员同一文件写入多条证书；查询、Excel 导出和待确认列表聚合展示多证书，不因多证书重复人员或待确认卡片。
+- P0-4 文件夹级二次归并已完成：导入文件记录 `folder_merge_key/result/confidence`；结构化识别会读取同文件夹已有身份证、人员和 AI 线索，唯一身份证人员可作为归属锚点；同文件夹多个完整身份证号或多个人名会生成待确认项。
 
 ### 进行中
 
@@ -45,6 +46,7 @@
 - 已通过：`pnpm run verify:archive-preview`
 - 已通过：`pnpm run verify:archive-write`
 - 已通过：`pnpm run verify:structured-recognition`
+- 已通过：`pnpm run verify:folder-merge`
 - 已通过：`pnpm run verify:id-card-privacy`
 - 已通过：`pnpm run verify:processing-worker-ai-success`
 - 已通过：`pnpm run verify:review-list`

@@ -210,6 +210,9 @@ export async function importDirectory(
       source_root_path,
       relative_path,
       parent_folder,
+      folder_merge_key,
+      folder_merge_result,
+      folder_merge_confidence,
       path_segments,
       path_parse_result,
       path_confidence,
@@ -232,6 +235,9 @@ export async function importDirectory(
       @sourceRootPath,
       @relativePath,
       @parentFolder,
+      @folderMergeKey,
+      NULL,
+      NULL,
       @pathSegments,
       @pathParseResult,
       @pathConfidence,
@@ -268,6 +274,7 @@ export async function importDirectory(
       const existingHash = findExistingHash.get(sha256) as ExistingHashRow | undefined
       const importStatus = existingHash ? 'duplicate' : 'new'
       const parentFolder = path.dirname(file.relativePath)
+      const folderMergeKey = buildFolderMergeKey(batchId, scanResult.rootPath, parentFolder)
 
       if (existingHash) {
         duplicateFiles += 1
@@ -301,6 +308,7 @@ export async function importDirectory(
         sourceRootPath: scanResult.rootPath,
         relativePath: file.relativePath,
         parentFolder,
+        folderMergeKey,
         pathSegments: JSON.stringify(getPathSegments(file.relativePath)),
         pathParseResult: null,
         pathConfidence: null,
@@ -407,6 +415,14 @@ function getErrorMessage(error: unknown): string {
 
 function getPathSegments(relativePath: string): string[] {
   return relativePath.split(path.sep).filter(Boolean)
+}
+
+function buildFolderMergeKey(batchId: string, sourceRootPath: string, parentFolder: string): string {
+  return JSON.stringify({
+    batchId,
+    sourceRootPath,
+    parentFolder,
+  })
 }
 
 function toImportBatchSummary(row: ImportBatchRow): ImportBatchSummary {

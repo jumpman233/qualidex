@@ -16,9 +16,36 @@ interface PersonRow {
   id: string
   name: string | null
   id_card_number: string | null
+  id_card_hash?: string | null
   id_card_last4: string | null
   primary_category: string | null
   region: string | null
+}
+
+interface FolderFileRow {
+  id: string
+  file_name: string | null
+  source_batch_id: string | null
+  source_root_path: string | null
+  parent_folder: string | null
+  relative_path: string | null
+  ocr_text: string | null
+  ai_result_json: string | null
+  person_id: string | null
+  person_name: string | null
+  id_card_number: string | null
+  id_card_hash: string | null
+  id_card_last4: string | null
+  primary_category: string | null
+  region: string | null
+}
+
+interface FolderMergeContext {
+  key: string | null
+  anchorPerson: PersonRow | null
+  reviewReasons: string[]
+  confidence: number | null
+  resultJson: string | null
 }
 
 const CONFIDENCE_REVIEW_THRESHOLD = 0.8
@@ -32,7 +59,8 @@ export function persistStructuredRecognition(
   const now = new Date().toISOString()
   const localIdCards = extractIdCardNumbers(input.ocrText)
   const localIdCard = localIdCards.length === 1 ? localIdCards[0] : null
-  const personMatch = resolvePerson(db, result, localIdCard, now)
+  const folderMergeContext = analyzeFolderMergeContext(db, input.fileId, result, localIdCards)
+  const personMatch = resolvePerson(db, result, localIdCard, folderMergeContext.anchorPerson, now)
 
   updateFileMultiPersonFlag(db, input.fileId, result.multi_person.is_multi_person_file, now)
 
@@ -43,7 +71,15 @@ export function persistStructuredRecognition(
     ? insertLicenses(db, input, result, personMatch.person.id, reviewReasons, now)
     : []
 
-  const structuredReviewReasons = collectStructuredReviewReasons(result, personMatch.strategy, reviewReasons, localIdCards)
+  recordFolderMergeContext(db, input.fileId, folderMergeContext, now)
+
+  const structuredReviewReasons = collectStructuredReviewReasons(
+    result,
+    personMatch.strategy,
+    reviewReasons,
+    localIdCards,
+    folderMergeContext.reviewReasons,
+  )
   persistStructuredReviewItems(db, input.fileId, structuredReviewReasons, result, now)
 
   return {
@@ -60,12 +96,18 @@ function resolvePerson(
   db: Database.Database,
   result: AiExtractionResult,
   localIdCard: NormalizedIdCard | null,
+  folderAnchorPerson: PersonRow | null,
   now: string,
 ): { person: PersonRow | null, strategy: string } {
   const name = result.person.name?.trim() || null
   const idCardLast4 = localIdCard?.idCardLast4 ?? result.person.id_card_last4?.trim() ?? null
   const primaryCategory = result.category.primary_value?.trim() || null
   const region = result.region.value?.trim() || null
+
+  if (!localIdCard && folderAnchorPerson && isFolderAnchorCompatible(name, folderAnchorPerson)) {
+    updatePersonFromResult(db, folderAnchorPerson.id, result, null, now, true)
+    return { person: folderAnchorPerson, strategy: 'folder_single_id_card' }
+  }
 
   if (!name) {
     return { person: null, strategy: 'person_unknown' }
@@ -144,6 +186,10 @@ function resolvePerson(
   }
 
   return { person: createPerson(db, result, localIdCard, now, reviewStatusForResult(result)), strategy: 'created' }
+}
+
+function isFolderAnchorCompatible(name: string | null, anchorPerson: PersonRow): boolean {
+  return !name || !anchorPerson.name || name === anchorPerson.name
 }
 
 function createPerson(
@@ -508,11 +554,309 @@ function insertLicense(
   return id
 }
 
+function analyzeFolderMergeContext(
+  db: Database.Database,
+  fileId: string,
+  result: AiExtractionResult,
+  localIdCards: NormalizedIdCard[],
+): FolderMergeContext {
+  const currentFile = readFolderFile(db, fileId)
+  if (!currentFile) {
+    return createEmptyFolderMergeContext()
+  }
+  if (!currentFile.source_batch_id && !currentFile.source_root_path) {
+    return createEmptyFolderMergeContext()
+  }
+
+  const folderRows = readFolderFiles(db, currentFile)
+  const idCardsByHash = new Map<string, {
+    idCardLast4: string
+    maskedDisplay: string
+    fileIds: Set<string>
+    personIds: Set<string>
+  }>()
+  const names = new Set<string>()
+  const personRowsById = new Map<string, PersonRow>()
+
+  for (const row of folderRows) {
+    for (const idCard of extractIdCardNumbers(row.ocr_text ?? '')) {
+      addFolderIdCard(idCardsByHash, idCard, row.id, row.person_id)
+    }
+
+    if (row.id_card_hash && row.id_card_last4) {
+      addFolderIdCardByParts(idCardsByHash, row.id_card_hash, row.id_card_last4, row.id, row.person_id)
+    }
+    if (row.person_id) {
+      personRowsById.set(row.person_id, {
+        id: row.person_id,
+        name: row.person_name,
+        id_card_number: row.id_card_number,
+        id_card_hash: row.id_card_hash,
+        id_card_last4: row.id_card_last4,
+        primary_category: row.primary_category,
+        region: row.region,
+      })
+    }
+
+    collectNamesFromAiResult(names, row.ai_result_json)
+    addName(names, row.person_name)
+  }
+
+  for (const idCard of localIdCards) {
+    addFolderIdCard(idCardsByHash, idCard, fileId, null)
+  }
+  collectNamesFromResult(names, result)
+
+  const reviewReasons: string[] = []
+  if (idCardsByHash.size > 1) {
+    reviewReasons.push('同一文件夹出现多个完整身份证号')
+  }
+  if (names.size > 1) {
+    reviewReasons.push('同一文件夹出现多个人名')
+  }
+
+  const anchorPerson = resolveFolderAnchorPerson(idCardsByHash, personRowsById)
+  const confidence = reviewReasons.length > 0
+    ? 0.3
+    : anchorPerson
+      ? 0.86
+      : folderRows.length > 1
+        ? 0.5
+        : null
+  const key = buildFolderMergeKey(currentFile)
+  const resultJson = JSON.stringify({
+    folder_merge_key: key,
+    parent_folder: currentFile.parent_folder,
+    source_batch_id: currentFile.source_batch_id,
+    source_root_path: currentFile.source_root_path,
+    file_ids: uniqueStrings(folderRows.map((row) => row.id)),
+    candidate_person_ids: uniqueStrings(folderRows.map((row) => row.person_id)),
+    id_card_last4_values: [...idCardsByHash.values()].map((item) => item.idCardLast4),
+    names: [...names],
+    anchor_person_id: anchorPerson?.id ?? null,
+    review_reasons: reviewReasons,
+  })
+
+  return {
+    key,
+    anchorPerson,
+    reviewReasons,
+    confidence,
+    resultJson,
+  }
+}
+
+function readFolderFile(db: Database.Database, fileId: string): FolderFileRow | null {
+  const row = db.prepare(`
+    SELECT
+      files.id,
+      files.file_name,
+      files.source_batch_id,
+      files.source_root_path,
+      files.parent_folder,
+      files.relative_path,
+      files.ocr_text,
+      NULL AS ai_result_json,
+      NULL AS person_id,
+      NULL AS person_name,
+      NULL AS id_card_number,
+      NULL AS id_card_hash,
+      NULL AS id_card_last4,
+      NULL AS primary_category,
+      NULL AS region
+    FROM files
+    WHERE files.id = @fileId
+    LIMIT 1
+  `).get({ fileId }) as FolderFileRow | undefined
+
+  return row ?? null
+}
+
+function readFolderFiles(db: Database.Database, currentFile: FolderFileRow): FolderFileRow[] {
+  return db.prepare(`
+    SELECT
+      files.id,
+      files.file_name,
+      files.source_batch_id,
+      files.source_root_path,
+      files.parent_folder,
+      files.relative_path,
+      files.ocr_text,
+      ai_latest.result_json AS ai_result_json,
+      people.id AS person_id,
+      people.name AS person_name,
+      people.id_card_number,
+      people.id_card_hash,
+      people.id_card_last4,
+      people.primary_category,
+      people.region
+    FROM files
+    LEFT JOIN person_documents
+      ON person_documents.file_id = files.id
+      AND person_documents.status = 'active'
+    LEFT JOIN people
+      ON people.id = person_documents.person_id
+      AND people.status = 'active'
+      AND people.deleted_at IS NULL
+    LEFT JOIN (
+      SELECT ai_extract_results.*
+      FROM ai_extract_results
+      INNER JOIN (
+        SELECT file_id, MAX(created_at) AS created_at
+        FROM ai_extract_results
+        GROUP BY file_id
+      ) latest
+        ON latest.file_id = ai_extract_results.file_id
+        AND latest.created_at = ai_extract_results.created_at
+    ) ai_latest ON ai_latest.file_id = files.id
+    WHERE COALESCE(files.source_batch_id, '') = COALESCE(@sourceBatchId, '')
+      AND COALESCE(files.source_root_path, '') = COALESCE(@sourceRootPath, '')
+      AND COALESCE(files.parent_folder, '') = COALESCE(@parentFolder, '')
+      AND files.deleted_at IS NULL
+  `).all({
+    sourceBatchId: currentFile.source_batch_id,
+    sourceRootPath: currentFile.source_root_path,
+    parentFolder: currentFile.parent_folder,
+  }) as FolderFileRow[]
+}
+
+function addFolderIdCard(
+  map: Map<string, { idCardLast4: string, maskedDisplay: string, fileIds: Set<string>, personIds: Set<string> }>,
+  idCard: NormalizedIdCard,
+  fileId: string,
+  personId: string | null,
+): void {
+  addFolderIdCardByParts(map, idCard.idCardHash, idCard.idCardLast4, fileId, personId, idCard.maskedDisplay)
+}
+
+function addFolderIdCardByParts(
+  map: Map<string, { idCardLast4: string, maskedDisplay: string, fileIds: Set<string>, personIds: Set<string> }>,
+  idCardHash: string,
+  idCardLast4: string,
+  fileId: string,
+  personId: string | null,
+  maskedDisplay = '',
+): void {
+  const existing = map.get(idCardHash) ?? {
+    idCardLast4,
+    maskedDisplay,
+    fileIds: new Set<string>(),
+    personIds: new Set<string>(),
+  }
+
+  existing.fileIds.add(fileId)
+  if (personId) {
+    existing.personIds.add(personId)
+  }
+  map.set(idCardHash, existing)
+}
+
+function resolveFolderAnchorPerson(
+  idCardsByHash: Map<string, { personIds: Set<string> }>,
+  personRowsById: Map<string, PersonRow>,
+): PersonRow | null {
+  const idCardHashes = new Set(idCardsByHash.keys())
+  const matchedPeople = [...personRowsById.values()].filter((person) => {
+    return person.id_card_hash ? idCardHashes.has(person.id_card_hash) : false
+  })
+  const uniqueMatchedPeople = new Map(matchedPeople.map((person) => [person.id, person]))
+
+  return uniqueMatchedPeople.size === 1
+    ? [...uniqueMatchedPeople.values()][0]
+    : null
+}
+
+function collectNamesFromAiResult(names: Set<string>, resultJson: string | null): void {
+  if (!resultJson) {
+    return
+  }
+
+  try {
+    collectNamesFromResult(names, JSON.parse(resultJson) as AiExtractionResult)
+  } catch {
+    return
+  }
+}
+
+function collectNamesFromResult(names: Set<string>, result: AiExtractionResult): void {
+  addName(names, result.person.name)
+  for (const person of result.multi_person.detected_people) {
+    addName(names, person.name)
+  }
+}
+
+function addName(names: Set<string>, value: string | null | undefined): void {
+  const normalized = value?.trim()
+  if (normalized) {
+    names.add(normalized)
+  }
+}
+
+function recordFolderMergeContext(
+  db: Database.Database,
+  fileId: string,
+  context: FolderMergeContext,
+  now: string,
+): void {
+  if (!context.key) {
+    return
+  }
+
+  const currentFile = readFolderFile(db, fileId)
+  if (!currentFile) {
+    return
+  }
+
+  db.prepare(`
+    UPDATE files
+    SET
+      folder_merge_key = @folderMergeKey,
+      folder_merge_result = @folderMergeResult,
+      folder_merge_confidence = @folderMergeConfidence,
+      updated_at = @updatedAt
+    WHERE COALESCE(source_batch_id, '') = COALESCE(@sourceBatchId, '')
+      AND COALESCE(source_root_path, '') = COALESCE(@sourceRootPath, '')
+      AND COALESCE(parent_folder, '') = COALESCE(@parentFolder, '')
+      AND deleted_at IS NULL
+  `).run({
+    folderMergeKey: context.key,
+    folderMergeResult: context.resultJson,
+    folderMergeConfidence: context.confidence,
+    updatedAt: now,
+    sourceBatchId: currentFile.source_batch_id,
+    sourceRootPath: currentFile.source_root_path,
+    parentFolder: currentFile.parent_folder,
+  })
+}
+
+function createEmptyFolderMergeContext(): FolderMergeContext {
+  return {
+    key: null,
+    anchorPerson: null,
+    reviewReasons: [],
+    confidence: null,
+    resultJson: null,
+  }
+}
+
+function buildFolderMergeKey(file: FolderFileRow): string {
+  return JSON.stringify({
+    batchId: file.source_batch_id,
+    sourceRootPath: file.source_root_path,
+    parentFolder: file.parent_folder,
+  })
+}
+
+function uniqueStrings(values: Array<string | null>): string[] {
+  return [...new Set(values.filter((value): value is string => Boolean(value)))]
+}
+
 function collectStructuredReviewReasons(
   result: AiExtractionResult,
   personMatchStrategy: string,
   reviewReasons: string[],
   localIdCards: NormalizedIdCard[],
+  folderMergeReviewReasons: string[],
 ): string[] {
   const reasons = new Set<string>()
 
@@ -540,6 +884,9 @@ function collectStructuredReviewReasons(
   }
 
   for (const reason of reviewReasons) {
+    reasons.add(reason)
+  }
+  for (const reason of folderMergeReviewReasons) {
     reasons.add(reason)
   }
 
